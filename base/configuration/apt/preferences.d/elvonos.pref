@@ -1,0 +1,4 @@
+# Pin ElvonOS custom packages above Debian defaults
+Package: *
+Pin: release o=ElvonOS
+Pin-Priority: 1000

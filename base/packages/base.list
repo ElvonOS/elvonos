@@ -1,0 +1,23 @@
+# ElvonOS V1 - target core packages
+# Debian 13.7 amd64. Versions are recorded in documentation/06-package-plan.md.
+# One package per line. Comments and blank lines are ignored by the build scripts.
+
+systemd
+systemd-sysv
+dbus
+dbus-user-session
+udev
+kmod
+initramfs-tools
+linux-image-amd64
+linux-headers-amd64
+linux-base
+firmware-linux-free
+grub-efi-amd64
+grub-efi-amd64-signed
+shim-signed
+efibootmgr
+dosfstools
+e2fsprogs
+parted
+gdisk

@@ -1,0 +1,6 @@
+# Audio stack
+pipewire
+pipewire-pulse
+wireplumber
+alsa-utils
+libspa-0.2-bluetooth

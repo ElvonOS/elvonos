@@ -1,0 +1,22 @@
+# ElvonOS V1 — Waydroid runtime (Phase 3)
+# waydroid, python3-gbinder, libgbinder1 and libglibutil1 are ElvonOS-built
+# packages from the signed ElvonOS repository. They are not in Debian 13.
+# Transitive dependencies supplied by other lists:
+#   lxc, lxcfs, polkitd, pkexec        -> security.list
+#   pipewire-pulse                     -> audio.list
+#   nftables, iptables                 -> network.list
+#   apparmor                           -> security.list
+
+waydroid
+python3-gbinder
+libgbinder1
+libglibutil1
+
+python3
+python3-gi
+gir1.2-gtk-3.0
+python3-dbus
+
+# Wayland clipboard backend. Waydroid's optional pyclip bridge is not packaged
+# in Debian 13; wl-clipboard is the tested Trixie component.
+wl-clipboard

@@ -1,0 +1,30 @@
+# ElvonOS V1 — live ISO and installer (Phase 7)
+# Runtime packages for the live environment and Calamares. Build-host tools
+# (live-build, squashfs-tools, xorriso, isolinux, syslinux-common) are in
+# build-host.list, not here.
+
+calamares
+calamares-settings-debian
+
+live-boot
+live-config
+live-config-systemd
+
+grub-efi-amd64-bin
+grub-efi-amd64-signed
+shim-signed
+mtools
+dosfstools
+parted
+gdisk
+e2fsprogs
+cryptsetup
+btrfs-progs
+rsync
+os-prober
+efibootmgr
+
+user-setup
+sudo
+apt-utils
+gnupg

@@ -1,0 +1,9 @@
+# Security, policy, and container base
+apparmor
+apparmor-profiles
+polkitd
+pkexec
+lxc
+lxcfs
+xdg-desktop-portal
+xdg-desktop-portal-gtk

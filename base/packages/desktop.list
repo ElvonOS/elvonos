@@ -1,0 +1,55 @@
+# ElvonOS V1 — desktop runtime (Phase 4)
+# Qt 6.8.2 / QML + LayerShellQt 6.3.4 from Debian 13.
+# This is ElvonOS infrastructure and UI, not a native Linux application
+# platform. Users install Android APKs; they do not install Qt/GTK apps.
+
+# Qt runtime
+libqt6core6t64
+libqt6gui6
+libqt6qml6
+libqt6quick6
+libqt6quickcontrols2-6
+libqt6waylandclient6
+libqt6svg6
+libqt6dbus6
+libqt6network6
+libqt6sql6
+libqt6sql6-sqlite
+libqt6concurrent6
+libqt6xml6
+libqt6opengl6
+
+qt6-qpa-plugins
+qt6-wayland
+
+# QML modules used by the shell
+qml6-module-qtquick
+qml6-module-qtquick-controls
+qml6-module-qtquick-layouts
+qml6-module-qtquick-window
+qml6-module-qtquick-templates
+qml6-module-qtquick-shapes
+qml6-module-qtquick-dialogs
+qml6-module-qtquick-effects
+qml6-module-qtquick-particles
+qml6-module-qtqml
+qml6-module-qtqml-workerscript
+qml6-module-qt-labs-settings
+qml6-module-qt-labs-folderlistmodel
+qml6-module-qtquick-localstorage
+qml6-module-qtcore
+qml6-module-qt5compat-graphicaleffects
+
+# Layer-shell integration for the taskbar/panels
+layer-shell-qt
+liblayershellqtinterface6
+qml6-module-org-kde-layershell
+
+# Fonts and desktop services
+fonts-inter
+fonts-noto
+fonts-noto-color-emoji
+sddm
+upower
+udisks2
+lm-sensors

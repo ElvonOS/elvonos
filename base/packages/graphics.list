@@ -1,0 +1,10 @@
+# Graphics stack
+libgl1-mesa-dri
+mesa-vulkan-drivers
+mesa-utils
+vulkan-tools
+libegl1
+libgles2
+libgbm1
+libdrm2
+xwayland

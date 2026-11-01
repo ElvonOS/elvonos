@@ -1,0 +1,26 @@
+# ElvonOS V1 — Waydroid 1.6.3 backport build dependencies (Phase 3)
+# Trixie packages only. The following custom packages must be built first and
+# are intentionally NOT listed here because they are not in Debian 13:
+#   libglibutil1, libglibutil-dev, libgbinder1, libgbinder-dev,
+#   python3-gbinder, waydroid
+# Build order: libglibutil -> libgbinder -> python3-gbinder -> waydroid.
+
+build-essential
+debhelper
+dh-python
+dh-apparmor
+pkg-config
+git
+patch
+quilt
+fakeroot
+dpkg-dev
+
+python3
+python3-dev
+python3-setuptools
+python3-build
+python3-installer
+pybuild-plugin-pyproject
+
+libglib2.0-dev

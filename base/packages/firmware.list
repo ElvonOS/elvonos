@@ -1,0 +1,10 @@
+# Firmware and microcode (non-free-firmware)
+# Install the microcode matching the CPU vendor; the hardware service selects it.
+firmware-linux
+firmware-amd-graphics
+firmware-mediatek
+firmware-realtek
+firmware-misc-nonfree
+firmware-sof-signed
+firmware-nvidia-gsp
+firmware-nvidia-graphics

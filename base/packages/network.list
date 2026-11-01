@@ -1,0 +1,9 @@
+# Networking stack
+network-manager
+wpasupplicant
+wireless-regdb
+dnsmasq-base
+iproute2
+nftables
+iptables
+bluez

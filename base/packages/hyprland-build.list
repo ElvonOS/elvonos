@@ -1,0 +1,59 @@
+# ElvonOS V1 — Hyprland 0.50.1 candidate build dependencies (Phase 2)
+# Verified against Debian 13.7. Exact source tags and checksums are pinned in
+# build/phase2/sources.lock before the first build.
+# This is a build-host profile; it is not the target runtime package set.
+
+build-essential
+cmake
+ninja-build
+pkg-config
+git
+
+# Wayland, input, DRM, seat
+libwayland-dev
+wayland-protocols
+libxkbcommon-dev
+libinput-dev
+libdrm-dev
+libgbm-dev
+libegl-dev
+libgles-dev
+libgl-dev
+libudev-dev
+libseat-dev
+libdisplay-info-dev
+hwdata
+
+# XCB / XWayland
+libxcb1-dev
+libxcb-composite0-dev
+libxcb-errors-dev
+libxcb-icccm4-dev
+libxcb-render0-dev
+libxcb-res0-dev
+libxcb-xfixes0-dev
+libxcb-util-dev
+
+# Graphics, text, accessibility
+libpixman-1-dev
+libcairo2-dev
+libpango1.0-dev
+liblcms2-dev
+libcanberra-dev
+libglib2.0-dev
+libxcursor-dev
+
+# Hyprland and hypr library dependencies
+libtomlplusplus-dev
+libmuparser-dev
+libudis86-dev
+libre2-dev
+uuid-dev
+libzip-dev
+libmagic-dev
+libjpeg-dev
+libwebp-dev
+libpng-dev
+librsvg2-dev
+libjxl-dev
+libpugixml-dev

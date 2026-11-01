@@ -1,0 +1,7 @@
+# ElvonOS package repository template
+# Substituted during build / install with actual repo URI and suite
+Types: deb
+URIs: @ELVONOS_REPO_URI@
+Suites: @ELVONOS_SUITE@
+Components: main
+Signed-By: /usr/share/keyrings/elvonos-archive-keyring.gpg

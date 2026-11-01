@@ -1,0 +1,25 @@
+# Build outputs
+/build/out/
+/build/cache/
+/build/logs/
+*.iso
+*.img
+*.deb
+*.udeb
+*.dsc
+*.changes
+*.buildinfo
+
+# Android images are external artifacts (2.3 GB); verify by SHA256 instead of committing
+Android/Waydroid-images/*.img
+
+# Compiled artifacts
+target/
+CMakeCache.txt
+CMakeFiles/
+.qmake.stash
+*.o
+*.so
+*.a
+__pycache__/
+*.pyc

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=ElvonOS
+Comment=ElvonOS Android-First Desktop Session
+Exec=/usr/bin/elvonos-session
+Type=Application
+DesktopNames=ElvonOS:Hyprland

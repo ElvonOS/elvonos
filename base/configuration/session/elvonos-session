@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# ElvonOS V1 — Session Entrypoint
+# Launched by Display Manager (SDDM/greetd) via /usr/share/wayland-sessions/elvonos.desktop
+set -euo pipefail
+
+export XDG_CURRENT_DESKTOP="ElvonOS:Hyprland"
+export XDG_SESSION_TYPE="wayland"
+export XDG_SESSION_DESKTOP="ElvonOS"
+export QT_QPA_PLATFORM="wayland"
+export QT_WAYLAND_DISABLE_WINDOWDECORATION="1"
+export GDK_BACKEND="wayland"
+export SDL_VIDEODRIVER="wayland"
+export _JAVA_AWT_WM_NONREPARENTING=1
+
+# Config location
+HYPRLAND_CONFIG="/etc/elvonos/hyprland.conf"
+if [[ -f "$HOME/.config/elvonos/hyprland.conf" ]]; then
+    HYPRLAND_CONFIG="$HOME/.config/elvonos/hyprland.conf"
+fi
+
+echo "==> Starting ElvonOS Session with Hyprland..."
+exec Hyprland --config "$HYPRLAND_CONFIG"

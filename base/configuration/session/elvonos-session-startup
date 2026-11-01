@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# ElvonOS V1 — Session Startup Daemon Launcher
+# Executed by Hyprland exec-once
+set -euo pipefail
+
+echo "==> ElvonOS Session Startup initializing..."
+
+# 1. Wait for Wayland display socket
+timeout=10
+while [[ -z "${WAYLAND_DISPLAY:-}" ]] && (( timeout > 0 )); do
+    sleep 0.5
+    (( timeout-- ))
+done
+
+# 2. Start PipeWire / WirePlumber if not running via systemd
+if ! systemctl --user is-active --quiet pipewire; then
+    systemctl --user start pipewire pipewire-pulse wireplumber 2>/dev/null || true
+fi
+
+# 3. Start ElvonOS Desktop Shell if present
+if command -v elvonos-shell >/dev/null 2>&1; then
+    elvonos-shell &
+fi
+
+# 4. Start Waydroid user session if container service is active
+if systemctl is-active --quiet waydroid-container; then
+    echo "==> Starting Waydroid session..."
+    waydroid session start &
+fi
+
+echo "==> ElvonOS Session Startup complete."
