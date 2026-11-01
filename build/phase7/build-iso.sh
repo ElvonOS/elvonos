@@ -61,16 +61,17 @@ if [[ -f "$REPO_ROOT/Android/Waydroid-images/system.img" && -f "$REPO_ROOT/Andro
     (cd "$ISO_STAGING/elvonos/waydroid" && sha256sum system.img vendor.img > SHA256SUMS)
     echo "==> Bundled system.img and vendor.img with checksums."
 else
-    echo "Warning: Waydroid images not found in Android/Waydroid-images/. ISO will build without bundled images."
+    echo "Warning: Waydroid images not found in Android/Waydroid-images/."
 fi
 
 # 3. Create SquashFS Filesystem
 echo "==> Creating filesystem.squashfs (this may take a couple of minutes)..."
-$SUDO mksquashfs "$ROOTFS" "$ISO_STAGING/live/filesystem.squashfs" \
+cd "$ROOTFS"
+$SUDO mksquashfs . "$ISO_STAGING/live/filesystem.squashfs" \
     -comp xz \
-    -e "$ROOTFS/boot" \
-    -e "$ROOTFS/tmp/*" \
-    -e "$ROOTFS/var/cache/*" \
+    -e boot \
+    -e tmp/* \
+    -e var/cache/apt/archives/* \
     -noappend
 
 # 4. Configure GRUB for UEFI Boot
@@ -83,13 +84,16 @@ insmod part_gpt
 insmod part_msdos
 insmod fat
 insmod ext2
+insmod iso9660
 insmod all_video
 insmod gfxterm
+
+search --no-floppy --set=root --file /live/vmlinuz
 
 set menu_color_normal=white/black
 set menu_color_highlight=black/light-gray
 
-menuentry "ElvonOS V1 Live & Installer (Debian 13 + Hyprland + Waydroid)" {
+menuentry "ElvonOS V1 Live & Installer (Debian 13 + Sway/Hyprland + Waydroid)" {
     linux /live/vmlinuz boot=live components quiet splash
     initrd /live/initrd.img
 }
@@ -109,8 +113,8 @@ grub-mkstandalone \
     --fonts="" \
     "boot/grub/grub.cfg=$ISO_STAGING/boot/grub/grub.cfg"
 
-# Create EFI FAT partition image for hybrid booting
-dd if=/dev/zero of="$ISO_STAGING/boot/grub/efi.img" bs=1M count=8
+# Create EFI FAT partition image for hybrid booting (24MB)
+dd if=/dev/zero of="$ISO_STAGING/boot/grub/efi.img" bs=1M count=24
 mkfs.vfat "$ISO_STAGING/boot/grub/efi.img"
 mmd -i "$ISO_STAGING/boot/grub/efi.img" ::/EFI ::/EFI/BOOT
 mcopy -i "$ISO_STAGING/boot/grub/efi.img" "$ISO_STAGING/EFI/BOOT/BOOTX64.EFI" ::/EFI/BOOT/
