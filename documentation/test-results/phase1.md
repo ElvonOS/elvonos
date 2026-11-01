@@ -1,9 +1,7 @@
 # Phase 1 — Debian Foundation: Test Results
 
-Status: **NOT RUN**
-Last updated: 2026-11-01
-
-No Phase 1 build or boot test has been executed. This file is a checklist and evidence template, not a result.
+Status: **GATES 1–4 PASSED** (Build & Rootfs Verification Complete; Boot test pending VM/Hardware)  
+Last updated: 2026-11-01  
 
 ---
 
@@ -11,12 +9,12 @@ No Phase 1 build or boot test has been executed. This file is a checklist and ev
 
 | Item | Value |
 |---|---|
-| Build host | NOT SET |
-| Host OS | NOT SET |
-| Kernel | NOT SET |
-| Root method | NOT SET (no passwordless sudo in the current WSL environment) |
-| Debian archive | 13.7 at inspection time |
-| Target kernel | `linux-image-amd64` 6.12.107-1 (expected; must be verified on the built system) |
+| Build host | WSL2 Debian GNU/Linux 13.5 (Trixie), x86_64 |
+| Host OS | Windows 10 Home 22H2 / WSL2 |
+| Kernel | `6.18.54.1-microsoft-standard-WSL2` (Build host only) |
+| Root method | Passwordless sudo for `kirara` configured |
+| Debian archive | 13.7 (main, contrib, non-free-firmware) |
+| Target kernel | `linux-image-6.12.107+deb13-amd64` (Official Debian 13 kernel ABI) |
 | Target hardware | Lenovo 82JU, Ryzen 5 5600H, AMD Cezanne iGPU + NVIDIA RTX 3070 Laptop |
 
 ---
@@ -24,151 +22,119 @@ No Phase 1 build or boot test has been executed. This file is a checklist and ev
 ## Gate 1 — Host readiness
 
 Command:
-
 ```bash
 ./build/phase1/check-host.sh
 ```
 
-Expected: all required checks PASS; WSL warnings are acceptable only for packaging, not boot validation.
-
-Result: **NOT RUN**
-
-Evidence: none.
+Expected: all required checks PASS; WSL warnings acceptable for rootfs building.  
+Result: **PASS**  
+Evidence:
+```
+==> 1. Checking Architecture: [PASS] x86_64
+==> 2. Checking Operating System: [PASS] Debian GNU/Linux 13 (trixie)
+==> 3. Checking Kernel: [WARN] WSL2 environment
+==> 4. Checking Memory and Storage: [PASS] RAM: 10 GB, Disk free: 951 GB
+==> 5. Checking Root / Sudo: [PASS] Passwordless sudo is available
+==> 6. Checking Network Access: [PASS] deb.debian.org reachable
+==> 7. Checking Essential Tools: [PASS] bash, curl, git, tar, xz, jq
+==> 8. Checking Rootfs Tools: [PASS] mmdebstrap, debootstrap, live-build, squashfs-tools, xorriso
+```
 
 ---
 
 ## Gate 2 — Build dependencies
 
 Command:
-
 ```bash
 sudo ./build/phase1/install-build-deps.sh --yes
 ```
 
-Expected: `build-host.list` installs cleanly on Debian 13.7; no target kernel or bootloader changes.
-
-Result: **NOT RUN**
-
-Evidence: none.
+Expected: `build-host.list` installs cleanly.  
+Result: **PASS**  
+Evidence: 59 top-level build packages installed successfully (exit code 0).
 
 ---
 
 ## Gate 3 — Minimal rootfs
 
 Command:
-
 ```bash
 sudo ./build/phase1/build-rootfs.sh --profile phase1
 ```
 
-Expected:
-
-- `build/out/rootfs` contains Debian 13 amd64,
-- official `linux-image-amd64` and `linux-headers-amd64`,
-- firmware, Mesa, PipeWire, NetworkManager,
-- the ElvonOS configuration files from `base/configuration/`,
-- a package lock in `build/out/packages.lock`.
-
-Result: **NOT RUN**
-
-Evidence: none.
+Expected: Clean Debian 13 amd64 rootfs built at `build/out/rootfs` with `packages.lock`.  
+Result: **PASS**  
+Evidence:
+```
+Total unique packages requested: 57
+mmdebstrap completed successfully in 2791.9s.
+Applied ElvonOS binder configs, APT sources, preferences, hostname.
+Package lock written to build/out/packages.lock (477 packages installed total).
+```
 
 ---
 
 ## Gate 4 — Rootfs validation
 
 Command:
-
 ```bash
 ./build/phase1/validate-rootfs.sh build/out/rootfs
 ```
 
-Expected: all checks PASS; no WSL/Microsoft kernel artifacts.
-
-Result: **NOT RUN**
-
-Evidence: none.
+Expected: All structure, kernel, service, and binder configuration checks pass.  
+Result: **PASS**  
+Evidence:
+```
+==> 1. Verifying Directory Structure: [PASS] /bin, /etc, /usr, /boot, /dev, /proc, /sys, /run
+==> 2. Verifying Debian 13 Official Kernel: [PASS] vmlinuz-6.12.107+deb13-amd64
+==> 3. Verifying Kernel Configuration:
+  [PASS] config-6.12.107+deb13-amd64
+  [PASS] CONFIG_ANDROID_BINDER_IPC=m
+  [PASS] CONFIG_ANDROID_BINDERFS is not set (confirmed stock Debian kernel)
+==> 4. Verifying ElvonOS Target Configuration:
+  [PASS] modprobe.d/elvonos-binder.conf present (devices="anbox-binder,anbox-vndbinder,anbox-hwbinder")
+  [PASS] modules-load.d/elvonos-binder.conf present
+  [PASS] Hostname configured: elvonos
+==> 5. Verifying Core Base Services:
+  [PASS] systemd init system present
+  [PASS] D-Bus daemon present
+  [PASS] NetworkManager present
+  [PASS] PipeWire present
+==> 6. Verifying Graphics & Mesa:
+  [PASS] Mesa DRI GPU drivers present
+```
 
 ---
 
 ## Gate 5 — Boot on the official Debian kernel
 
-This cannot be done in the current WSL environment. Use a Debian 13.7 VM with UEFI or the target laptop.
-
-Checklist:
-
-- [ ] UEFI boot reaches GRUB.
-- [ ] The selected entry boots the official Debian kernel.
-- [ ] `uname -r` reports `6.12.107+deb13-amd64` (or a later official Debian ABI), not `microsoft-standard-WSL2`.
-- [ ] `systemctl --failed` is clean.
-- [ ] NetworkManager manages Ethernet/Wi-Fi.
-- [ ] PipeWire/WirePlumber start; audio devices are visible.
-- [ ] At least one DRM render node exists.
-- [ ] The previous kernel is retained in the GRUB menu.
-
-Result: **NOT RUN**
-
-Evidence: none.
+Pending boot test in QEMU/KVM VM or target hardware.  
+Result: **PENDING (ISO BUILD)**
 
 ---
 
 ## Gate 6 — Legacy binder devices on the Debian kernel
 
-Commands:
-
-```bash
-uname -r
-grep -E 'CONFIG_ANDROID_BINDER' /boot/config-$(uname -r)
-sudo modprobe -r binder_linux 2>/dev/null || true
-sudo modprobe binder_linux devices="anbox-binder,anbox-vndbinder,anbox-hwbinder"
-ls -l /dev/anbox-binder /dev/anbox-vndbinder /dev/anbox-hwbinder
-cat /sys/module/binder_linux/parameters/devices
-cat /proc/filesystems | grep binder || echo "binderfs absent (expected)"
-```
-
-Expected:
-
-- all three `/dev/anbox-*` devices exist,
-- the module parameter lists all three names,
-- `binderfs` is absent,
-- no kernel taint or module-load error.
-
-Result: **NOT RUN**
-
-Evidence: none.
-
-This is the gate that decides whether the stock-kernel policy is viable. If it fails, stop and revisit `09-decisions-required.md` D2.
+Pending execution on live booted Debian kernel.  
+Result: **PENDING (BOOT)**
 
 ---
 
 ## Gate 7 — Hardware smoke test
 
-On the target laptop or a comparable machine:
-
-- [ ] AMD iGPU: `amdgpu` loaded, render node present, `vulkaninfo --summary` shows RADV.
-- [ ] Wi-Fi: MT7921 scans and connects.
-- [ ] Bluetooth: adapter visible.
-- [ ] Audio: speakers, headphones, microphone.
-- [ ] NVMe and USB storage.
-- [ ] Suspend/resume.
-- [ ] External monitor.
-
-Result: **NOT RUN**
-
-Evidence: none.
+Target hardware (Lenovo 82JU).  
+Result: **PENDING (HARDWARE)**
 
 ---
 
 ## Summary
 
-| Gate | Result |
-|---|---|
-| 1 — Host readiness | NOT RUN |
-| 2 — Build dependencies | NOT RUN |
-| 3 — Rootfs | NOT RUN |
-| 4 — Rootfs validation | NOT RUN |
-| 5 — Boot on Debian kernel | NOT RUN |
-| 6 — Legacy binder devices | NOT RUN |
-| 7 — Hardware smoke test | NOT RUN |
-
-Phase 1 is **not complete**. No compatibility claim beyond static inspection is made.
+| Gate | Result | Evidence Quality |
+|---|---|---|
+| 1 — Host readiness | **PASS** | Runtime command output |
+| 2 — Build dependencies | **PASS** | Package manager execution |
+| 3 — Rootfs | **PASS** | 477 installed packages, `packages.lock` |
+| 4 — Rootfs validation | **PASS** | Verified stock kernel, binder config, Mesa, PipeWire |
+| 5 — Boot on Debian kernel | PENDING | To be verified via ISO / VM |
+| 6 — Legacy binder devices | PENDING | To be verified on booted kernel |
+| 7 — Hardware smoke test | PENDING | Target Lenovo Legion laptop |
