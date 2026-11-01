@@ -31,7 +31,9 @@ if [[ ! -d "$ROOTFS" ]]; then
 fi
 
 # Clean and prepare staging
-$SUDO rm -rf "$ISO_STAGING"
+if [[ "${REBUILD_SQUASHFS:-0}" == "1" ]]; then
+    $SUDO rm -rf "$ISO_STAGING"
+fi
 mkdir -p "$ISO_STAGING/live"
 mkdir -p "$ISO_STAGING/boot/grub"
 mkdir -p "$ISO_STAGING/EFI/BOOT"
@@ -65,20 +67,24 @@ else
 fi
 
 # 3. Create SquashFS Filesystem
-echo "==> Creating filesystem.squashfs (this may take a couple of minutes)..."
-cd "$ROOTFS"
-$SUDO mksquashfs . "$ISO_STAGING/live/filesystem.squashfs" \
-    -comp xz \
-    -e boot \
-    -e tmp/* \
-    -e var/cache/apt/archives/* \
-    -noappend
+if [[ -f "$ISO_STAGING/live/filesystem.squashfs" && "${REBUILD_SQUASHFS:-0}" != "1" ]]; then
+    echo "==> Reusing existing filesystem.squashfs..."
+else
+    echo "==> Creating filesystem.squashfs (this may take a couple of minutes)..."
+    cd "$ROOTFS"
+    $SUDO mksquashfs . "$ISO_STAGING/live/filesystem.squashfs" \
+        -comp xz \
+        -e boot \
+        -e tmp/* \
+        -e var/cache/apt/archives/* \
+        -noappend
+fi
 
-# 4. Configure GRUB for UEFI Boot
+# 4. Configure GRUB for Hybrid Boot (Serial + Screen)
 echo "==> Configuring GRUB bootloader..."
 cat << 'EOF' > "$ISO_STAGING/boot/grub/grub.cfg"
 set default=0
-set timeout=5
+set timeout=3
 
 insmod part_gpt
 insmod part_msdos
@@ -88,24 +94,36 @@ insmod iso9660
 insmod all_video
 insmod gfxterm
 
+serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1
+terminal_input console serial
+terminal_output console serial
+
 search --no-floppy --set=root --file /live/vmlinuz
 
 set menu_color_normal=white/black
 set menu_color_highlight=black/light-gray
 
-menuentry "ElvonOS V1 Live & Installer (Debian 13 + Sway/Hyprland + Waydroid)" {
-    linux /live/vmlinuz boot=live components quiet splash
+menuentry "ElvonOS V1 Live (Debian 13 + Sway/Hyprland + Waydroid)" {
+    linux /live/vmlinuz boot=live components console=tty0 console=ttyS0,115200n8
     initrd /live/initrd.img
 }
 
 menuentry "ElvonOS V1 (Failsafe / Nomodeset)" {
-    linux /live/vmlinuz boot=live components nomodeset
+    linux /live/vmlinuz boot=live components nomodeset console=tty0 console=ttyS0,115200n8
     initrd /live/initrd.img
 }
 EOF
 
-# 5. Build standalone EFI boot image
-echo "==> Generating EFI bootloader image..."
+# 5. Build BIOS and EFI bootloader images
+echo "==> Generating BIOS and EFI bootloader images..."
+# BIOS (i386-pc-eltorito via grub-mkimage with embedded modules)
+grub-mkimage \
+    -O i386-pc-eltorito \
+    -o "$ISO_STAGING/boot/grub/bios.img" \
+    -p /boot/grub \
+    iso9660 biosdisk part_msdos part_gpt search search_fs_file linux normal test echo terminal serial font gfxterm gfxmenu all_video
+
+# EFI (x86_64-efi)
 grub-mkstandalone \
     --format=x86_64-efi \
     --output="$ISO_STAGING/EFI/BOOT/BOOTX64.EFI" \
@@ -113,7 +131,8 @@ grub-mkstandalone \
     --fonts="" \
     "boot/grub/grub.cfg=$ISO_STAGING/boot/grub/grub.cfg"
 
-# Create EFI FAT partition image for hybrid booting (24MB)
+# Create clean EFI FAT partition image for UEFI booting (24MB)
+rm -f "$ISO_STAGING/boot/grub/efi.img"
 dd if=/dev/zero of="$ISO_STAGING/boot/grub/efi.img" bs=1M count=24
 mkfs.vfat "$ISO_STAGING/boot/grub/efi.img"
 mmd -i "$ISO_STAGING/boot/grub/efi.img" ::/EFI ::/EFI/BOOT
@@ -125,7 +144,7 @@ mkdir -p "$(dirname "$OUTPUT_ISO")"
 xorriso -as mkisofs \
     -r -V "ELVONOS_V1" \
     -J -joliet-long \
-    -b boot/grub/efi.img \
+    -b boot/grub/bios.img \
     -c boot/grub/boot.cat \
     -no-emul-boot \
     -boot-load-size 4 \

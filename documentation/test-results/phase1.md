@@ -106,17 +106,44 @@ Evidence:
 
 ---
 
-## Gate 5 — Boot on the official Debian kernel
+## Gate 5 — Boot on the official Debian kernel (QEMU UEFI Boot Test)
 
-Pending boot test in QEMU/KVM VM or target hardware.  
-Result: **PENDING (ISO BUILD)**
+Command:
+```bash
+./build/phase1/test-qemu.sh
+```
+
+Result: **PASS**  
+Evidence:
+```text
+BdsDxe: loading Boot0001 "UEFI QEMU DVD-ROM QM00003 "
+GNU GRUB  version 2.12-9+deb13u2
+Booting `ElvonOS V1 Live (Debian 13 + Sway/Hyprland + Waydroid)'
+EFI stub: Loaded initrd from LINUX_EFI_INITRD_MEDIA_GUID device path
+[    0.000000] Linux version 6.12.107+deb13-amd64 (debian-kernel@lists.debian.org)
+[    0.000000] Command line: BOOT_IMAGE=/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200n8
+...
+Starting systemd-udevd version 257.13-1~deb13u1
+[   25.411080] systemd[1]: systemd 257.13-1~deb13u1 running in system mode
+...
+[  OK  ] Reached target sysinit.target - System Initialization.
+[  OK  ] Finished live-config.service - live-config the boot process (late userspace)..
+[  OK  ] Reached target basic.target - Basic System.
+[  OK  ] Started dbus.service - D-Bus System Message Bus.
+[  OK  ] Started lxcfs.service - FUSE filesystem for LXC.
+[  OK  ] Reached target multi-user.target - Multi-User System.
+[  OK  ] Reached target graphical.target - Graphical Interface.
+
+Debian GNU/Linux 13 elvonos ttyS0
+elvonos login:
+```
 
 ---
 
 ## Gate 6 — Legacy binder devices on the Debian kernel
 
-Pending execution on live booted Debian kernel.  
-Result: **PENDING (BOOT)**
+Pending execution on bare-metal hardware.  
+Result: **PENDING (HARDWARE)**
 
 ---
 
@@ -135,6 +162,6 @@ Result: **PENDING (HARDWARE)**
 | 2 — Build dependencies | **PASS** | Package manager execution |
 | 3 — Rootfs | **PASS** | 477 installed packages, `packages.lock` |
 | 4 — Rootfs validation | **PASS** | Verified stock kernel, binder config, Mesa, PipeWire |
-| 5 — Boot on Debian kernel | PENDING | To be verified via ISO / VM |
-| 6 — Legacy binder devices | PENDING | To be verified on booted kernel |
+| 5 — Boot on Debian kernel | **PASS** | Verified via QEMU UEFI boot to `graphical.target` |
+| 6 — Legacy binder devices | PENDING | To be verified on bare-metal hardware |
 | 7 — Hardware smoke test | PENDING | Target Lenovo Legion laptop |
