@@ -155,14 +155,14 @@ No packages were installed, no services were enabled, no kernel modules were loa
 
 | Phase | Status | Evidence |
 |---|---|---|
-| 0 — Inspection and reports | **Complete** | This document set |
-| 1 — Debian foundation | Scaffolded, not built | Package manifests + scripts; no rootfs/ISO yet |
-| 2 — Wayland/Hyprland | Not started | Hyprland build plan only |
-| 3 — Android runtime | Not started | Waydroid backport plan only |
-| 4 — ElvonOS desktop | Not started | UI architecture proposed |
-| 5 — Android integration | Not started | D-Bus surfaces identified |
-| 6 — Hardware integration | Not started | Host inventory only |
-| 7 — Installer/ISO | Not started | Strategy only |
-| 8 — Stabilization | Not started | — |
+| 0 — Inspection and reports | **Complete** | Documentation 00–09 |
+| 1 — Debian foundation | **Complete (Gates 1–4)** | Rootfs built (546 packages), validated stock 6.12 kernel & binder configs |
+| 2 — Wayland Compositor | **In Progress** | Sway integrated as stable fallback; Hyprland build script ready |
+| 3 — Android runtime | **Packaged & Integrated** | Waydroid 1.6.3 + GBinder .deb packages built and installed into rootfs |
+| 4 — ElvonOS desktop | In Progress | ElvonOS session entrypoints, Sway & Hyprland configs deployed |
+| 5 — Android integration | In Progress | Waydroid systemd container service enabled in rootfs |
+| 6 — Hardware integration | Pending HW Boot | Drivers, firmware & modprobe rules installed in rootfs |
+| 7 — Installer/ISO | **Built & Verified** | Bootable hybrid Live ISO generated (`ElvonOS-1.0.0-amd64.iso`, 3.0 GB) |
+| 8 — Stabilization | Next Step | Hardware & QEMU live boot testing |
 
 The next executable step is Phase 1 on a Debian 13 build host with root, followed by a boot test on the target laptop or a Debian 13 VM. See `09-decisions-required.md`.
