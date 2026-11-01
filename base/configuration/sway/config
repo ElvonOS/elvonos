@@ -1,15 +1,13 @@
-# ElvonOS V1 — Sway Compositor Fallback Configuration
-# Used if Hyprland is unavailable or as a lightweight fallback compositor
-
-# Mod key: Windows / Command key
+# ElvonOS V1 — Sway Compositor Configuration
 set $mod Mod4
 
-# Appearance
+# Appearance & Background
+output * bg #181926 solid_color
 font pango:Noto Sans 11
 default_border pixel 2
 default_floating_border pixel 2
-gaps inner 6
-gaps outer 12
+gaps inner 8
+gaps outer 14
 
 # Input configuration
 input type:touchpad {
@@ -19,14 +17,22 @@ input type:touchpad {
 }
 
 input type:keyboard {
-    xkb_layout "us"
+    xkb_layout "de,us"
 }
 
-# Android / Waydroid application window rules
+# Application window rules
 for_window [app_id="Waydroid"] floating enable, border normal 2
 for_window [class="Waydroid"] floating enable, border normal 2
+for_window [app_id="foot"] border pixel 2
+
+# Status bar
+bar {
+    swaybar_command waybar
+}
 
 # Keybindings
+bindsym $mod+Return exec foot
+bindsym $mod+d exec wofi --show drun
 bindsym $mod+q kill
 bindsym $mod+f fullscreen toggle
 bindsym $mod+space floating toggle
@@ -44,5 +50,6 @@ bindsym $mod+Shift+3 move container to workspace number 3
 bindsym $mod+Shift+4 move container to workspace number 4
 bindsym $mod+Shift+5 move container to workspace number 5
 
-# Autostart ElvonOS services
+# Autostart desktop terminal and services
+exec foot
 exec /usr/bin/elvonos-session-startup
