@@ -1,13 +1,13 @@
-# ElvonOS V1 — Sway Compositor Configuration
+# ElvonOS V1 — Sway Desktop Configuration
 set $mod Mod4
 
 # Appearance & Background
-output * bg #181926 solid_color
+output * bg #1e2030 solid_color
 font pango:Noto Sans 11
 default_border pixel 2
 default_floating_border pixel 2
-gaps inner 8
-gaps outer 14
+gaps inner 6
+gaps outer 10
 
 # Input configuration
 input type:touchpad {
@@ -20,15 +20,12 @@ input type:keyboard {
     xkb_layout "de,us"
 }
 
-# Application window rules
+# Window Rules
 for_window [app_id="Waydroid"] floating enable, border normal 2
 for_window [class="Waydroid"] floating enable, border normal 2
-for_window [app_id="foot"] border pixel 2
-
-# Status bar
-bar {
-    swaybar_command waybar
-}
+for_window [app_id="wofi"] floating enable, border none
+for_window [app_id="pavucontrol"] floating enable
+for_window [app_id="thunar"] floating enable
 
 # Keybindings
 bindsym $mod+Return exec foot
@@ -50,6 +47,8 @@ bindsym $mod+Shift+3 move container to workspace number 3
 bindsym $mod+Shift+4 move container to workspace number 4
 bindsym $mod+Shift+5 move container to workspace number 5
 
-# Autostart desktop terminal and services
-exec foot
+# Launch Bottom Taskbar (Waybar) directly via exec
+exec waybar -c /etc/xdg/waybar/config -s /etc/xdg/waybar/style.css
+
+# Autostart ElvonOS background session
 exec /usr/bin/elvonos-session-startup

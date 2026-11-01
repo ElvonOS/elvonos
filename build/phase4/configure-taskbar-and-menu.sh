@@ -265,14 +265,9 @@ for_window [app_id="wofi"] floating enable, border none
 for_window [app_id="pavucontrol"] floating enable
 for_window [app_id="thunar"] floating enable
 
-# Bottom Taskbar
-bar {
-    swaybar_command waybar
-}
-
 # Keybindings
 bindsym $mod+Return exec foot
-bindsym $mod+d exec wofi
+bindsym $mod+d exec wofi --show drun
 bindsym $mod+q kill
 bindsym $mod+f fullscreen toggle
 bindsym $mod+space floating toggle
@@ -290,18 +285,25 @@ bindsym $mod+Shift+3 move container to workspace number 3
 bindsym $mod+Shift+4 move container to workspace number 4
 bindsym $mod+Shift+5 move container to workspace number 5
 
+# Launch Bottom Taskbar (Waybar) directly via exec
+exec waybar -c /etc/xdg/waybar/config -s /etc/xdg/waybar/style.css
+
 # Autostart ElvonOS background session
 exec /usr/bin/elvonos-session-startup
 EOF
 
 sudo cp -f "$ROOTFS/etc/elvonos/sway.conf" "$REPO_ROOT/base/configuration/sway/config"
 
+# Create /etc/xdg/waybar/config as well
+sudo cp -f "$ROOTFS/etc/xdg/waybar/config.jsonc" "$ROOTFS/etc/xdg/waybar/config"
+
 # 4. Sync configs to /etc/skel and /home/elvon
 sudo mkdir -p "$ROOTFS/home/elvon/.config/waybar" "$ROOTFS/home/elvon/.config/wofi" "$ROOTFS/home/elvon/.config/sway"
 sudo cp -rf "$ROOTFS/etc/xdg/waybar/"* "$ROOTFS/home/elvon/.config/waybar/"
 sudo cp -rf "$ROOTFS/etc/wofi/"* "$ROOTFS/home/elvon/.config/wofi/"
 sudo cp -f "$ROOTFS/etc/elvonos/sway.conf" "$ROOTFS/home/elvon/.config/sway/config"
-sudo chown -R 1000:1000 "$ROOTFS/home/elvon/.config"
+sudo cp -f "$ROOTFS/etc/elvonos/sway.conf" "$ROOTFS/home/elvon/.config/elvonos/sway.conf" 2>/dev/null || true
+sudo chown -R 1000:1000 "$ROOTFS/home/elvon"
 
 echo "=================================================="
 echo " Taskbar & Start Menu setup complete!"
