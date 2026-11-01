@@ -53,3 +53,7 @@ sddm
 upower
 udisks2
 lm-sensors
+
+# Fallback Compositor (Native in Debian 13)
+sway
+swaybg

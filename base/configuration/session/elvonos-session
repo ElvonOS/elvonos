@@ -18,5 +18,20 @@ if [[ -f "$HOME/.config/elvonos/hyprland.conf" ]]; then
     HYPRLAND_CONFIG="$HOME/.config/elvonos/hyprland.conf"
 fi
 
-echo "==> Starting ElvonOS Session with Hyprland..."
-exec Hyprland --config "$HYPRLAND_CONFIG"
+echo "==> Detecting compositor for ElvonOS Session..."
+if command -v Hyprland >/dev/null 2>&1; then
+    echo "==> Starting Hyprland compositor..."
+    exec Hyprland --config "$HYPRLAND_CONFIG"
+elif command -v sway >/dev/null 2>&1; then
+    echo "==> Hyprland not found. Launching Sway fallback compositor..."
+    SWAY_CONFIG="/etc/elvonos/sway.conf"
+    if [[ -f "$HOME/.config/elvonos/sway.conf" ]]; then
+        SWAY_CONFIG="$HOME/.config/elvonos/sway.conf"
+    elif [[ -f "/usr/share/elvonos/sway/config" ]]; then
+        SWAY_CONFIG="/usr/share/elvonos/sway/config"
+    fi
+    exec sway -c "$SWAY_CONFIG"
+else
+    echo "Error: Neither Hyprland nor Sway is installed!"
+    exit 1
+fi
