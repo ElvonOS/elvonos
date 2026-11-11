@@ -123,13 +123,13 @@ documented here first.
 
 ## Install
 
-1. Download `ElvonOS-1.0.3-amd64.iso` from
-   <https://sourceforge.net/projects/elvonos/files/releases/1.0.3/>.
+1. Download `ElvonOS-1.0.7-amd64.iso` from
+   <https://sourceforge.net/projects/elvonos/files/releases/1.0.7/>.
 2. Verify:
 
    ```sh
    sha256sum -c SHA256SUMS
-   minisign -Vm ElvonOS-1.0.3-amd64.iso -p elvonos.pub
+   minisign -Vm ElvonOS-1.0.7-amd64.iso -p elvonos.pub
    ```
 
 3. Write the ISO to a USB stick (`dd` or balenaEtcher) and boot it.
@@ -138,8 +138,8 @@ documented here first.
 5. Reboot and log in with your account.
 
 All drivers and firmware are included. Optional software is installed on the
-first boot when online. The 1.0.3 ISO is the current installation image; the
-signed updater delivers the current software line (`elvonos-apps 1.0.7-5`).
+first boot when online. The 1.0.7 ISO ships the current software line
+(`elvonos-apps 1.0.7-7`), including the signed updater and automatic updates.
 Details: [Live installer](documentation/13-live-installer.md).
 
 ## Updates
@@ -155,7 +155,7 @@ runs setup components (for example Flathub for the Store). Updates are staged
 in the background and installed on shutdown/reboot. A new ISO is needed only
 for kernel, bootloader or live-image changes. The public key is at
 `/usr/share/elvonos/update/elvonos.pub`. Current component versions:
-`elvonos-apps 1.0.7-5`, `flatpak-store 1`, `zz-auto-updates 2`. Details:
+`elvonos-apps 1.0.7-7`, `flatpak-store 1`, `zz-auto-updates 2`. Details:
 [Free updates](documentation/15-free-updates.md).
 
 ## Repository layout
@@ -189,8 +189,9 @@ Build host: Debian 13 (or WSL2 with Debian 13).
 sudo bash build/phase1/build-rootfs.sh     # Debian rootfs
 sudo bash build/kernel/build-kernel.sh     # 6.12.116-elvonos
 sudo bash build/win8de/build-win8de.sh --install-rootfs
-ELVONOS_VERSION=1.0.3 sudo -E bash build/phase7/build-iso.sh
-# → build/out/ElvonOS-1.0.3-amd64.iso
+ELVONOS_VERSION=1.0.7 ELVONOS_APPS_VERSION=1.0.7-7 \
+  sudo -E bash build/phase7/build-iso.sh
+# → build/out/ElvonOS-1.0.7-amd64.iso
 ```
 
 ## Documentation

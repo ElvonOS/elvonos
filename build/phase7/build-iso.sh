@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ROOTFS="${1:-$REPO_ROOT/build/out/rootfs}"
 VERSION="${ELVONOS_VERSION:-1.0.0}"
+APPS_VERSION="${ELVONOS_APPS_VERSION:-$VERSION}"
 ISO_STAGING="$REPO_ROOT/build/out/iso_staging"
 OUTPUT_ISO="$REPO_ROOT/build/out/ElvonOS-$VERSION-amd64.iso"
 
@@ -84,7 +85,7 @@ $SUDO install -Dm644 "$REPO_ROOT/documentation/14-licensing.md" \
     "$ROOTFS/usr/share/doc/elvonos/licensing-decision.md"
 # Component version shipped with this image (payload updates compare against it)
 $SUDO mkdir -p "$ROOTFS/var/lib/elvonos/components"
-printf '%s\n' "${ELVONOS_VERSION:-1.0.0}" | \
+printf '%s\n' "$APPS_VERSION" | \
     $SUDO tee "$ROOTFS/var/lib/elvonos/components/elvonos-apps.version" >/dev/null
 if [[ -x "$REPO_ROOT/build/update/install-update-key.sh" ]]; then
     ELVONOS_UPDATE_KEY="${ELVONOS_UPDATE_KEY:-$HOME/.config/elvonos/keys/elvonos.pub}" \

@@ -8,6 +8,7 @@
 set -euo pipefail
 
 VERSION="${1:?Usage: publish-update.sh VERSION}"
+APPS_VERSION="${ELVONOS_APPS_VERSION:-$VERSION}"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ISO="$REPO_ROOT/build/out/ElvonOS-$VERSION-amd64.iso"
 KEY="${ELVONOS_UPDATE_KEY_SECRET:-$HOME/.config/elvonos/keys/elvonos.key}"
@@ -24,10 +25,10 @@ WORK="$(mktemp -d)"
 [ -f "$ISO" ] || { echo "ISO missing: $ISO" >&2; exit 1; }
 [ -f "$KEY" ] || { echo "signing key missing: $KEY" >&2; exit 1; }
 
-echo "==> Building software payload"
-bash "$REPO_ROOT/build/update/make-payload.sh" "$VERSION" \
-    "$WORK/elvonos-apps-$VERSION.tar.zst"
-PAYLOAD="$WORK/elvonos-apps-$VERSION.tar.zst"
+echo "==> Building software payload ($APPS_VERSION)"
+bash "$REPO_ROOT/build/update/make-payload.sh" "$APPS_VERSION" \
+    "$WORK/elvonos-apps-$APPS_VERSION.tar.zst"
+PAYLOAD="$WORK/elvonos-apps-$APPS_VERSION.tar.zst"
 
 echo "==> Signing"
 minisign -Sm "$ISO" -s "$KEY" -t "ElvonOS $VERSION"
@@ -59,7 +60,7 @@ Files:
   SHA256SUMS.minisig
 
 Update components (signed):
-  components/elvonos-apps-$VERSION.tar.zst
+  components/elvonos-apps-$APPS_VERSION.tar.zst
   components/flatpak-store-1.sh
 
 Verify:
@@ -87,16 +88,25 @@ rsync -avP --partial --timeout=300 --exclude '*.part' \
     "$ISO" "$SF_USER@$SF_HOST:$SF_RELEASE/"
 
 echo "==> Writing feed"
-python3 - "$FEED_REPO/feeds/stable.json" "$VERSION" "$SIZE" "$SHA256" \
+git -C "$FEED_REPO" pull --rebase origin main 2>/dev/null || true
+python3 - "$FEED_REPO/feeds/stable.json" "$VERSION" "$APPS_VERSION" "$SIZE" "$SHA256" \
     "$BASE_URL/releases/$VERSION/$(basename "$ISO")" \
     "$PAYLOAD_SHA" "$FLATPAK_SHA" <<'PY'
 import datetime
 import json
+import os
 import sys
 
-path, version, size, sha, iso_url, payload_sha, flatpak_sha = sys.argv[1:8]
+path, version, apps_version, size, sha, iso_url, payload_sha, flatpak_sha = sys.argv[1:9]
 base = "https://downloads.sourceforge.net/project/elvonos/components"
-data = {
+data = {}
+if os.path.exists(path):
+    try:
+        with open(path) as handle:
+            data = json.load(handle)
+    except Exception:
+        data = {}
+data.update({
     "channel": "stable",
     "version": version,
     "released": datetime.datetime.now(datetime.timezone.utc)
@@ -108,22 +118,21 @@ data = {
         "sha256": sha,
         "signature": iso_url + ".minisig",
     },
-    "components": {
-        "elvonos-apps": {
-            "version": version,
-            "type": "payload",
-            "url": f"{base}/elvonos-apps-{version}.tar.zst",
-            "sha256": payload_sha,
-            "signature": f"{base}/elvonos-apps-{version}.tar.zst.minisig",
-        },
-        "flatpak-store": {
-            "version": "1",
-            "type": "script",
-            "url": f"{base}/flatpak-store-1.sh",
-            "sha256": flatpak_sha,
-            "signature": f"{base}/flatpak-store-1.sh.minisig",
-        },
-    },
+})
+components = data.setdefault("components", {})
+components["elvonos-apps"] = {
+    "version": apps_version,
+    "type": "payload",
+    "url": f"{base}/elvonos-apps-{apps_version}.tar.zst",
+    "sha256": payload_sha,
+    "signature": f"{base}/elvonos-apps-{apps_version}.tar.zst.minisig",
+}
+components["flatpak-store"] = {
+    "version": "1",
+    "type": "script",
+    "url": f"{base}/flatpak-store-1.sh",
+    "sha256": flatpak_sha,
+    "signature": f"{base}/flatpak-store-1.sh.minisig",
 }
 with open(path, "w") as handle:
     handle.write(json.dumps(data, indent=2) + "\n")
