@@ -22,15 +22,23 @@ for Android apps.
 
 ## Screenshots
 
-| Start screen (Restart / Shut down) | Installer (English) |
-|---|---|
-| ![Start screen](https://raw.githubusercontent.com/ElvonOS/elvonos-updates/main/screenshots/start-menu-1.0.7.png) | ![Installer language selection](https://raw.githubusercontent.com/ElvonOS/elvonos-updates/main/screenshots/installer-language.png) |
+### Start screen — Restart / Shut down
 
-| Settings | ElvonOS updates (signed feed) |
-|---|---|
-| ![Settings](https://raw.githubusercontent.com/ElvonOS/elvonos-updates/main/screenshots/settings-1.0.7.png) | ![Updates](https://raw.githubusercontent.com/ElvonOS/elvonos-updates/main/screenshots/settings-updates-1.0.7.png) |
+![Start screen with Restart and Shut down](https://raw.githubusercontent.com/ElvonOS/elvonos-updates/main/screenshots/start-menu-1.0.7.png)
 
-Screenshots are also hosted on SourceForge:
+### Installer (English)
+
+![Installer language selection](https://raw.githubusercontent.com/ElvonOS/elvonos-updates/main/screenshots/installer-language.png)
+
+### Settings
+
+![Settings](https://raw.githubusercontent.com/ElvonOS/elvonos-updates/main/screenshots/settings-1.0.7.png)
+
+### ElvonOS updates
+
+![ElvonOS updates](https://raw.githubusercontent.com/ElvonOS/elvonos-updates/main/screenshots/settings-updates-1.0.7.png)
+
+All screenshots are also hosted on SourceForge:
 <https://sourceforge.net/projects/elvonos/files/screenshots/>
 
 ## Based on
