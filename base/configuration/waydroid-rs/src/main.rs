@@ -700,6 +700,16 @@ fn start_session() -> bool {
         return true;
     }
     repair_session_dirs();
+    // The upstream session manager sets up the LXC session config, including
+    // the Wayland socket bind (/run/xdg/wayland-0), the platform service and
+    // the task/window bridge.  The native DBus start used to skip those and
+    // Android apps could not create windows.
+    if which("waydroid").is_some()
+        && spawn_session("waydroid", &["session", "start"])
+        && wait_for_session(Duration::from_secs(20))
+    {
+        return true;
+    }
     if let Ok(executable) = env::current_exe() {
         if spawn_session(&executable.display().to_string(), &["session"])
             && wait_for_session(Duration::from_secs(15))
@@ -707,13 +717,8 @@ fn start_session() -> bool {
             return true;
         }
     }
-    if which("waydroid").is_none() {
-        log("waydroid binary is missing");
-        return false;
-    }
-    log("native session failed; falling back to upstream session");
-    spawn_session("waydroid", &["session", "start"])
-        && wait_for_session(Duration::from_secs(10))
+    log("could not start a Waydroid session");
+    false
 }
 
 fn lxc(arguments: &[&str]) -> Option<Output> {
@@ -1277,12 +1282,34 @@ fn launch_native(package: &str) -> bool {
     }
 }
 
+fn app_window_visible(package: &str) -> bool {
+    let home = env::var("HOME").unwrap_or_else(|_| "/root".into());
+    let path = Path::new(&home).join(".config/list-windows/windows.ini");
+    match fs::read_to_string(path) {
+        Ok(text) => text.contains(package),
+        Err(_) => false,
+    }
+}
+
+fn show_full_ui_fallback(package: &str) {
+    if app_window_visible(package) || which("waydroid").is_none() {
+        return;
+    }
+    let _ = Command::new("waydroid")
+        .args(["show-full-ui"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+}
+
 fn launch_package(package: &str) -> bool {
     // Native path first: set the Android active app and start its launcher
     // activity directly through the package manager.  The Waydroid platform
     // service turns the Android task into a Wayland window in multi-window
     // mode.
     if launch_native(package) {
+        thread::sleep(Duration::from_secs(2));
+        show_full_ui_fallback(package);
         return true;
     }
     if which("waydroid").is_some() && session_running() {
@@ -1292,6 +1319,8 @@ fn launch_package(package: &str) -> bool {
             .ok()
         {
             if status.success() {
+                thread::sleep(Duration::from_secs(2));
+                show_full_ui_fallback(package);
                 return true;
             }
         }
@@ -1305,9 +1334,14 @@ fn launch_package(package: &str) -> bool {
             "android.intent.category.LAUNCHER",
             "1",
         ]);
-        return result
+        let ok = result
             .map(|output| !text(&output).contains("No activities found"))
             .unwrap_or(false);
+        if ok {
+            thread::sleep(Duration::from_secs(2));
+            show_full_ui_fallback(package);
+        }
+        return ok;
     }
     false
 }
@@ -1957,34 +1991,18 @@ fn cmd_start() -> i32 {
 
 fn cmd_session() -> i32 {
     repair_session_dirs();
-    if !start_container() {
-        log("session: container failed to start");
+    if which("waydroid").is_none() {
+        log("waydroid binary is missing");
         return 1;
     }
-    let connection = match Connection::new_session() {
-        Ok(value) => value,
+    // Keep the upstream session manager authoritative: it configures the LXC
+    // Wayland/XDG mounts and the platform service needed for app windows.
+    match Command::new("waydroid").args(["session", "start"]).status() {
+        Ok(status) => status.code().unwrap_or(0),
         Err(error) => {
-            log(&format!("session: cannot connect to session bus: {}", error));
-            return 1;
+            log(&format!("session: {}", error));
+            1
         }
-    };
-    if let Err(error) = connection.request_name("id.waydro.Session", false, true, false) {
-        log(&format!("session: cannot own id.waydro.Session: {}", error));
-        return 1;
-    }
-    if let Some(parent) = session_pid_path().parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let _ = fs::write(session_pid_path(), format!("{}\n", std::process::id()));
-    if let Err(error) = native_session_start() {
-        let _ = fs::remove_file(session_pid_path());
-        log(&format!("session: container Start failed: {}", error));
-        return 1;
-    }
-    log(&format!("native session started (pid {})", std::process::id()));
-    let _ = ensure_bridge();
-    loop {
-        let _ = connection.process(Duration::from_millis(500));
     }
 }
 
