@@ -575,22 +575,22 @@ The default Start layout was also adjusted: Aurora takes the former Foot slot, D
   with a Codeberg mirror, and `elvonos-update check|download|apply`
   (user cache, `curl` + `minisign` + `jq`). The Settings **ELVONOS UPDATES**
   card drives the same client.
-- **Published release 1.0.3**: ISO
-  `228bd11aa42c88038f12559ceabd08154ce417759bd3ee248e3c1a505fdb5990`
-  (6,222,397,440 B) on SourceForge
-  (`/home/frs/project/elvonos/releases/1.0.3/`) with `.minisig`,
-  `SHA256SUMS` and `SHA256SUMS.minisig`; republish with
-  `build/update/publish-update.sh 1.0.3`.
+- **Published release 1.0.7**: ISO
+  `ae7a725ce5bf9de2d00c947192d6abd3b2d8a84591b3d0a51ead958b24b97cff`
+  (6,222,405,632 B) on SourceForge
+  (`/home/frs/project/elvonos/releases/1.0.7/`) with `.minisig`,
+  `SHA256SUMS` and `SHA256SUMS.minisig`; includes the 1.0.7 software line
+  (`elvonos-apps 1.0.7-7`), auto-update units and the fixed Start layout.
 - **Update layers (1.0.1)**: Debian OS packages (`apt-get upgrade`), ElvonOS
   software as signed `.tar.zst` payloads, signed script components (first:
   `flatpak-store` / Flathub setup), Flatpak metadata refresh, ISO for
   kernel/bootloader changes.
-- **Update test (2026-11-10, 1.0.3)**: fresh 1.0.3 install → `check` reported
-  11 OS updates and only `flatpak-store` → `apply` upgraded Debian packages and
-  configured Flathub → final `check` returned `"update": false`,
-  `"os_updates": 0`, `"components": []`, no kept-back kernel packages.
-  Feed primary: SourceForge; fallbacks: GitHub and Codeberg. APT failures no
-  longer abort component updates.
+- **Update test (2026-11-11, 1.0.7)**: fresh 1.0.7 install → `check` reported
+  11 OS updates, `flatpak-store` and `zz-auto-updates` → `apply` upgraded
+  Debian packages, configured Flathub and enabled the auto-update units →
+  final `check` returned `"update": false`, `"os_updates": 0`,
+  `"components": []`. Feed primary: SourceForge; fallbacks: GitHub and
+  Codeberg. APT failures do not abort component updates.
 - **Software update 1.0.4-2**: Settings → Updates now shows the last check
   time, OS/component counts, a live log and the ISO hint; `elvonos-update log`
   reads user/root logs. Delivered as a signed payload on top of 1.0.3.
