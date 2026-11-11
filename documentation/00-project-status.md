@@ -575,6 +575,17 @@ The default Start layout was also adjusted: Aurora takes the former Foot slot, D
   with a Codeberg mirror, and `elvonos-update check|download|apply`
   (user cache, `curl` + `minisign` + `jq`). The Settings **ELVONOS UPDATES**
   card drives the same client.
+- **Published release 1.0.9**: ISO
+  `050dcddcda47fc76b5da175a050a3427197b1b22046f12338ce351d29dfdcae9`
+  (5,971,404,800 B) on SourceForge
+  (`/home/frs/project/elvonos/releases/1.0.9/`) with `.minisig`,
+  `SHA256SUMS` and `SHA256SUMS.minisig`; includes the UI/Start/taskbar/Store/
+  desktop/Media fixes, Rust search index, UID 1000/Waydroid session policy and
+  the fullscreen fallback. Feed: `elvonos-apps 1.0.9-1`, `flatpak-store 1`,
+  `waydroid-image 1`, `desktop-policy 1`, `zz-auto-updates 2`. Source tarball
+  `ElvonOS-1.0.9-src.tar.zst` SHA
+  `6675b19f38b1181b5b5679f00278008058e1e08800a48c4f928caf989cfacf71`
+  (commit `bc29c7e`).
 - **Published release 1.0.7**: ISO
   `ae7a725ce5bf9de2d00c947192d6abd3b2d8a84591b3d0a51ead958b24b97cff`
   (6,222,405,632 B) on SourceForge
