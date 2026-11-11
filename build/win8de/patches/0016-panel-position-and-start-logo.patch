@@ -1,0 +1,353 @@
+--- a/Win8Running/main.cpp
++++ b/Win8Running/main.cpp
+@@ -118,6 +118,7 @@
+ 
+ class TaskbarSettings : public QObject {
+     Q_OBJECT
++    Q_PROPERTY(QString position READ position NOTIFY positionChanged)
+     Q_PROPERTY(int height READ height NOTIFY heightChanged)
+     Q_PROPERTY(bool groupDuplicates READ groupDuplicates NOTIFY groupDuplicatesChanged)
+     Q_PROPERTY(bool showTray READ showTray NOTIFY showTrayChanged)
+@@ -155,6 +156,7 @@
+         });
+     }
+ 
++    QString position() const { return m_position; }
+     int height() const { return m_height; }
+     bool groupDuplicates() const { return m_groupDuplicates; }
+     bool showTray() const { return m_showTray; }
+@@ -175,8 +177,35 @@
+             object = document.object();
+         }
+ 
+-        const int height = qBound(44, object.value(QStringLiteral("height"))
+-                                          .toInt(54), 72);
++        const QString requestedPosition =
++            object.value(QStringLiteral("position")).toString(m_position);
++        const QString position = requestedPosition == QStringLiteral("bottom")
++                                     ? QStringLiteral("bottom")
++                                     : QStringLiteral("top");
++        if (position != m_position) {
++            m_position = position;
++            emit positionChanged();
++        }
++
++        int height = object.contains(QStringLiteral("height"))
++                         ? object.value(QStringLiteral("height")).toInt(54)
++                         : -1;
++        if (height < 0) {
++            const QString formFactorPath =
++                QStandardPaths::writableLocation(
++                    QStandardPaths::GenericConfigLocation)
++                + QStringLiteral("/elvonos/formfactor.json");
++            QFile formFactorFile(formFactorPath);
++            if (formFactorFile.open(QIODevice::ReadOnly)) {
++                const QJsonObject formFactor =
++                    QJsonDocument::fromJson(formFactorFile.readAll()).object();
++                height = formFactor.value(QStringLiteral("taskbarHeight"))
++                             .toInt(54);
++            } else {
++                height = 54;
++            }
++        }
++        height = qBound(44, height, 84);
+         if (height != m_height) {
+             m_height = height;
+             emit heightChanged();
+@@ -208,6 +237,7 @@
+     }
+ 
+ signals:
++    void positionChanged();
+     void heightChanged();
+     void groupDuplicatesChanged();
+     void showTrayChanged();
+@@ -222,6 +252,7 @@
+     QString m_path;
+     QFileSystemWatcher m_watcher;
+     QTimer m_reloadTimer;
++    QString m_position = QStringLiteral("top");
+     int m_height = 54;
+     bool m_groupDuplicates = true;
+     bool m_showTray = true;
+@@ -1261,6 +1292,9 @@
+     const QString settingsPath =
+     QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) +
+     "/Win8Settings/settings.ini";
++    const QString themePath =
++    QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) +
++    "/elvonos/theme.json";
+ 
+     QVariantMap win8Colors;
+     auto loadSettings = [&]() {
+@@ -1270,12 +1304,54 @@
+         win8Colors["Tile"] = s.value("Tile", "#ffffff").toString();
+         win8Colors["TileHighlight"] =
+         s.value("TileHighlight", "#ff0000").toString();
++        win8Colors["Panel"] = s.value("Panel", win8Colors["Tile"]).toString();
++        win8Colors["Surface"] = s.value("Surface", win8Colors["Panel"]).toString();
++        win8Colors["Text"] = s.value("Text", "#F2F4F8").toString();
++        win8Colors["Accent"] =
++        s.value("Accent", win8Colors["TileHighlight"]).toString();
++        win8Colors["Accent2"] =
++        s.value("Accent2", win8Colors["Accent"]).toString();
+         s.endGroup();
++
++        QFile themeFile(themePath);
++        if (themeFile.open(QIODevice::ReadOnly)) {
++            const QJsonObject theme =
++                QJsonDocument::fromJson(themeFile.readAll()).object();
++            auto take = [&theme](const QString &key, const QString &fallback) {
++                const QString value = theme.value(key).toString();
++                return value.isEmpty() ? fallback : value;
++            };
++            win8Colors["Panel"] = take("panel", win8Colors["Panel"].toString());
++            win8Colors["Surface"] = take("surface", win8Colors["Surface"].toString());
++            win8Colors["Text"] = take("text", win8Colors["Text"].toString());
++            win8Colors["Accent"] = take("accent", win8Colors["Accent"].toString());
++            win8Colors["Accent2"] = take("accent2", win8Colors["Accent"].toString());
++            win8Colors["Radius"] = theme.value("radius").toInt(14);
++            win8Colors["Glass"] = theme.value("glass").toInt(78);
++        }
+     };
+     loadSettings();
+     engine.rootContext()->setContextProperty("Win8Colors",
+                                              QVariant::fromValue(win8Colors));
+ 
++    QFileSystemWatcher colorWatcher;
++    if (QFileInfo::exists(settingsPath))
++        colorWatcher.addPath(settingsPath);
++    if (QFileInfo::exists(themePath))
++        colorWatcher.addPath(themePath);
++    QObject::connect(&colorWatcher, &QFileSystemWatcher::fileChanged, &app,
++                     [&]() {
++        loadSettings();
++        engine.rootContext()->setContextProperty(
++            "Win8Colors", QVariant::fromValue(win8Colors));
++        if (!colorWatcher.files().contains(settingsPath)
++            && QFileInfo::exists(settingsPath))
++            colorWatcher.addPath(settingsPath);
++        if (!colorWatcher.files().contains(themePath)
++            && QFileInfo::exists(themePath))
++            colorWatcher.addPath(themePath);
++    });
++
+     engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
+     if (engine.rootObjects().isEmpty()) return -1;
+ 
+@@ -1285,12 +1361,19 @@
+     layer->setLayer(LayerShellQt::Window::LayerOverlay);
+     layer->setKeyboardInteractivity(
+         LayerShellQt::Window::KeyboardInteractivityExclusive);
+-    layer->setAnchors({
+-        LayerShellQt::Window::AnchorTop,
+-        LayerShellQt::Window::AnchorLeft,
+-        LayerShellQt::Window::AnchorRight
+-    });
+-    layer->setExclusiveZone(taskbarSettings->height());
++    auto applyPlacement = [layer, taskbarSettings]() {
++        const bool bottom = taskbarSettings->position() == QStringLiteral("bottom");
++        layer->setAnchors({
++            bottom ? LayerShellQt::Window::AnchorBottom
++                   : LayerShellQt::Window::AnchorTop,
++            LayerShellQt::Window::AnchorLeft,
++            LayerShellQt::Window::AnchorRight
++        });
++        layer->setExclusiveZone(taskbarSettings->height());
++    };
++    applyPlacement();
++    QObject::connect(taskbarSettings, &TaskbarSettings::positionChanged,
++                     &app, applyPlacement);
+ 
+     window->setFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+     window->show();
+--- a/Win8Running/main.qml
++++ b/Win8Running/main.qml
+@@ -67,16 +67,19 @@
+ 
+         Image {
+             anchors.fill: parent
+-            source: "file:///usr/share/backgrounds/elvonos/glass-top.png"
++            source: TaskbarSettings.position === "bottom"
++                    ? "file:///usr/share/backgrounds/elvonos/glass-bottom.png"
++                    : "file:///usr/share/backgrounds/elvonos/glass-top.png"
+             fillMode: Image.Stretch
+             opacity: 0.92
+         }
+ 
+         Rectangle {
+             anchors.fill: parent
++            opacity: Win8Colors.Glass / 100
+             gradient: Gradient {
+-                GradientStop { position: 0.0; color: "#4D23232E" }
+-                GradientStop { position: 1.0; color: "#80101018" }
++                GradientStop { position: 0.0; color: Win8Colors.Panel }
++                GradientStop { position: 1.0; color: Qt.darker(Win8Colors.Panel, 1.45) }
+             }
+         }
+ 
+@@ -120,10 +123,11 @@
+                 id: startButton
+                 width: 92
+                 height: 38
+-                radius: 11
++                radius: Math.max(4, Win8Colors.Radius - 3)
+                 color: startHover.hovered ? "#2BFFFFFF" : "#1AFFFFFF"
+                 border.width: 1
+-                border.color: startHover.hovered ? "#3A4CC2FF" : "#22FFFFFF"
++                border.color: startHover.hovered
++                              ? Win8Colors.Accent : Win8Colors.Text
+ 
+                 Behavior on color { ColorAnimation { duration: 120 } }
+ 
+@@ -131,25 +135,43 @@
+                     anchors.centerIn: parent
+                     spacing: 9
+ 
+-                    Grid {
+-                        columns: 2
+-                        spacing: 3
++                    Column {
++                        width: 17
++                        spacing: 2
+                         anchors.verticalCenter: parent.verticalCenter
+ 
+-                        Repeater {
+-                            model: 4
+-                            Rectangle {
+-                                width: 8
+-                                height: 8
+-                                radius: 2
+-                                color: "#4CC2FF"
++                        Rectangle {
++                            width: 17
++                            height: 4
++                            radius: 2
++                            gradient: Gradient {
++                                GradientStop { position: 0.0; color: Win8Colors.Accent }
++                                GradientStop { position: 1.0; color: Win8Colors.Accent2 }
++                            }
++                        }
++                        Rectangle {
++                            width: 11
++                            height: 4
++                            radius: 2
++                            gradient: Gradient {
++                                GradientStop { position: 0.0; color: Win8Colors.Accent }
++                                GradientStop { position: 1.0; color: Win8Colors.Accent2 }
++                            }
++                        }
++                        Rectangle {
++                            width: 17
++                            height: 4
++                            radius: 2
++                            gradient: Gradient {
++                                GradientStop { position: 0.0; color: Win8Colors.Accent }
++                                GradientStop { position: 1.0; color: Win8Colors.Accent2 }
+                             }
+                         }
+                     }
+ 
+                     Text {
+                         text: "Start"
+-                        color: "#F2F4F8"
++                        color: Win8Colors.Text
+                         font.pixelSize: 13
+                         font.weight: Font.DemiBold
+                     }
+@@ -300,7 +322,7 @@
+                     anchors.rightMargin: 4
+                     anchors.verticalCenter: parent.verticalCenter
+                     text: chip.title || chip.appId
+-                    color: "#F2F4F8"
++                    color: Win8Colors.Text
+                     font.pixelSize: 12
+                     elide: Text.ElideRight
+                 }
+@@ -462,7 +484,7 @@
+                 Text {
+                     id: clockTime
+                     text: "00:00"
+-                    color: "#F2F4F8"
++                    color: Win8Colors.Text
+                     font.pixelSize: 14
+                     font.weight: Font.DemiBold
+                 }
+--- a/Win8Start/main.cpp
++++ b/Win8Start/main.cpp
+@@ -1869,6 +1869,10 @@
+     win8Colors["Tile"] = s.value("Tile", "#ffffff").toString();
+     win8Colors["TileHighlight"] =
+         s.value("TileHighlight", "#ff0000").toString();
++    win8Colors["Text"] = s.value("Text", "#ffffff").toString();
++    win8Colors["Panel"] = s.value("Panel", win8Colors["Tile"]).toString();
++    win8Colors["Accent"] =
++        s.value("Accent", win8Colors["TileHighlight"]).toString();
+     s.endGroup();
+   };
+ 
+--- a/Win8Start/main.qml
++++ b/Win8Start/main.qml
+@@ -91,7 +91,7 @@
+                 wrapMode: Text.WordWrap
+                 
+                 // white dialog text
+-                color: "white"
++                color: Win8Colors.Text
+                 font.pixelSize: 25
+             }
+         }
+@@ -200,7 +200,7 @@
+             Text {
+                 id: start
+                 text: "Start"
+-                color: "white"
++                color: Win8Colors.Text
+                 font.pixelSize: 46
+                 font.weight: Font.Medium
+                 font.letterSpacing: 0.5
+@@ -344,7 +344,7 @@
+                     
+                     Text {
+                         text: AppLauncher.getCurrentUser()
+-                        color: "white"
++                        color: Win8Colors.Text
+                         font.pixelSize: 22
+                         font.weight: Font.Medium
+                         verticalAlignment: Text.AlignVCenter
+@@ -1417,7 +1417,7 @@
+                             anchors.leftMargin: 16
+                             anchors.bottomMargin: 8
+                             text: tile.name
+-                            color: "white"
++                            color: Win8Colors.Text
+                             font.pointSize: 14
+                             font.weight: 600
+                             width: parent.width - 10
+@@ -1846,7 +1846,7 @@
+                 id: apps
+                 text: "Apps"
+                 font.pixelSize: 44
+-                color: "white"
++                color: Win8Colors.Text
+                 font.weight: Font.Medium
+                 font.letterSpacing: 0.5
+                 anchors.left: parent.left
+@@ -1922,7 +1922,7 @@
+                         width: 290
+                         height: 42
+                         placeholderText: "Search apps…"
+-                        color: "white"
++                        color: Win8Colors.Text
+                         background: null
+                         placeholderTextColor: "#888888"
+                         font.pointSize: 14
+@@ -2357,7 +2357,7 @@
+                                 id: apptext
+                                 anchors.verticalCenter: parent.verticalCenter
+                                 text: apptilecol.name
+-                                color: "white"
++                                color: Win8Colors.Text
+                                 font.pointSize: 16
+                                 elide: Text.ElideRight
+                             }

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Compatibility wrapper: ElvonOS APK installer for Waydroid.
+exec /usr/bin/elvonos-waydroid install "$@"

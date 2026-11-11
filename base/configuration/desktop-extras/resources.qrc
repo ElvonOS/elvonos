@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>DesktopIcons.qml</file>
+        <file>Dock.qml</file>
+    </qresource>
+</RCC>

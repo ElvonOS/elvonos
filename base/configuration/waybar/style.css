@@ -1,0 +1,90 @@
+* {
+    border: none;
+    border-radius: 0;
+    font-family: "Noto Sans", "Segoe UI", "FontAwesome 6 Free", sans-serif;
+    font-size: 14px;
+    min-height: 0;
+}
+
+window#waybar {
+    background-color: rgba(240, 242, 246, 0.92);
+    border: 1px solid rgba(160, 160, 160, 0.35);
+    border-radius: 24px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    color: #202124;
+}
+
+#custom-start {
+    background-color: #e8eaed;
+    color: #202124;
+    font-weight: 600;
+    padding: 0 22px;
+    margin: 8px 4px 8px 10px;
+    border-radius: 22px;
+}
+
+#custom-start:hover {
+    background-color: #dadce0;
+}
+
+#custom-term,
+#custom-files,
+#custom-android {
+    background-color: #e8eaed;
+    color: #202124;
+    padding: 0 14px;
+    margin: 8px 4px;
+    border-radius: 22px;
+    font-size: 15px;
+}
+
+#custom-term:hover,
+#custom-files:hover,
+#custom-android:hover {
+    background-color: #dadce0;
+}
+
+#wlr-taskbar button {
+    background-color: rgba(32, 33, 36, 0.06);
+    color: #202124;
+    padding: 0 16px;
+    margin: 8px 4px;
+    border-radius: 20px;
+    border: 1px solid transparent;
+}
+
+#wlr-taskbar button.active {
+    background-color: #e8f0fe;
+    border: 1px solid #8ab4f8;
+    color: #1a73e8;
+}
+
+#wlr-taskbar button:hover {
+    background-color: rgba(32, 33, 36, 0.12);
+}
+
+#custom-volume,
+#custom-battery,
+#custom-network,
+#clock {
+    background-color: #e8eaed;
+    color: #202124;
+    padding: 0 16px;
+    margin: 8px 4px;
+    border-radius: 22px;
+    font-weight: 500;
+}
+
+#custom-volume:hover,
+#custom-battery:hover,
+#custom-network:hover {
+    background-color: #dadce0;
+}
+
+#clock {
+    font-weight: 500;
+}
+
+#clock:hover {
+    background-color: #dadce0;
+}

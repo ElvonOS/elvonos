@@ -1,0 +1,10 @@
+[Default Applications]
+application/vnd.android.package-archive=APK-Installer.desktop;
+text/plain=elvonos-notepad.desktop;
+video/mp4=elvonos-media.desktop;
+video/x-matroska=elvonos-media.desktop;
+audio/mpeg=elvonos-media.desktop;
+audio/flac=elvonos-media.desktop;
+application/pdf=elvonos-pdf.desktop;
+application/vnd.debian.binary-package=elvonos-package-installer.desktop;
+application/x-appimage=elvonos-package-installer.desktop;

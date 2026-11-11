@@ -1,0 +1,24 @@
+[Desktop Entry]
+Type=Application
+Name=Print & Scan
+Name[de]=Drucken & Scannen
+Name[fr]=Imprimer et numériser
+Name[es]=Imprimir y escanear
+Name[it]=Stampa e scannerizza
+Name[pt]=Imprimir e digitalizar
+Name[nl]=te hervatten Afdrukken en scannen
+Name[pl]=Drukuj i skanuj
+Name[ru]=Печать и сканирование
+Name[tr]=Yazdırma ve Tarama
+Name[uk]=Друк і сканування
+Name[cs]=Tisk a skenování
+Name[zh_CN]=打印和扫描
+Name[ja]=プリント＆スキャン
+GenericName=Printer and Scanner
+Comment=Manage printers, print test pages and scan documents
+Exec=elvonos-printscan
+Icon=printer
+Terminal=false
+StartupNotify=true
+Categories=Utility;System;HardwareSettings;
+Keywords=printer;print;scan;scanner;cups;sane;

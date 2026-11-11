@@ -1,0 +1,18 @@
+[Unit]
+Description=Apply staged ElvonOS updates on shutdown
+DefaultDependencies=no
+Before=shutdown.target
+ConditionPathExists=/etc/elvonos/auto-apply.enabled
+ConditionPathExists=/var/lib/elvonos/update/staged.json
+ConditionPathExists=!/run/live
+
+[Service]
+Type=oneshot
+ExecStart=-/usr/bin/elvonos-update apply --staged
+TimeoutStartSec=900
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=shutdown.target

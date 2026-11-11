@@ -1,0 +1,25 @@
+[Desktop Entry]
+Type=Application
+Name=Cleaner
+Name[de]=Reiniger
+Name[fr]=Nettoyant
+Name[es]=Limpiador
+Name[it]=Pulitore
+Name[pt]=Limpador
+Name[nl]=Schoner
+Name[pl]=Sprzątaczka
+Name[ru]=Очиститель
+Name[tr]=Temizleyici
+Name[uk]=Прибиральник
+Name[cs]=Čistič
+Name[sv]=Renare
+Name[zh_CN]=清洁剂
+Name[ja]=クリーナー
+GenericName=System Cleaner
+Comment=Free space by removing caches, trash, temporary files and package caches
+Exec=elvonos-cleaner
+Icon=gcleaner
+Terminal=false
+StartupNotify=true
+Categories=System;Utility;
+Keywords=clean;cleaner;cache;trash;temp;space;

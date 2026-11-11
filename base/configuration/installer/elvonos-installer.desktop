@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Install ElvonOS
+Name[de]=ElvonOS installieren
+Comment=Install the running live system to a disk
+Comment[de]=Installiert das laufende Live-System auf einen Datenträger
+Exec=elvonos-installer
+Icon=drive-harddisk
+Terminal=false
+StartupNotify=true
+Categories=System;
+Keywords=install;setup;disk;
+X-ElvonOS-Installer=true

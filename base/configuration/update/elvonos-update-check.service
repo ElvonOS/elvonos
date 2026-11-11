@@ -1,0 +1,12 @@
+[Unit]
+Description=ElvonOS automatic update staging
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/elvonos/auto-apply.enabled
+ConditionPathExists=!/run/live
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/elvonos-update auto
+Nice=10
+IOSchedulingClass=idle

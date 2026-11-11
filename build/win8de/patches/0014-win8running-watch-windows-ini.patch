@@ -1,0 +1,30 @@
+--- a/Win8Running/main.cpp
++++ b/Win8Running/main.cpp
+@@ -74,9 +74,25 @@
+         iniPath = QDir::homePath() + "/.config/list-windows/windows.ini";
+         load();
+ 
+-        watcher.addPath(iniPath);
++        // list-windows and Win8Running start in parallel. The INI file usually
++        // does not exist yet when this model is constructed, so also watch the
++        // directory and retry once the daemon has written the initial list.
++        watcher.addPath(QFileInfo(iniPath).absolutePath());
++        if (QFileInfo::exists(iniPath))
++            watcher.addPath(iniPath);
++
+         connect(&watcher, &QFileSystemWatcher::fileChanged, this, [this] {
+-            if (!watcher.files().contains(iniPath))
++            if (!watcher.files().contains(iniPath) && QFileInfo::exists(iniPath))
++                watcher.addPath(iniPath);
++            reload();
++        });
++        connect(&watcher, &QFileSystemWatcher::directoryChanged, this, [this] {
++            if (!watcher.files().contains(iniPath) && QFileInfo::exists(iniPath))
++                watcher.addPath(iniPath);
++            reload();
++        });
++        QTimer::singleShot(900, this, [this] {
++            if (!watcher.files().contains(iniPath) && QFileInfo::exists(iniPath))
+                 watcher.addPath(iniPath);
+             reload();
+         });

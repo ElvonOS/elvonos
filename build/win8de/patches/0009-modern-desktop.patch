@@ -1,0 +1,1146 @@
+diff --git a/Win8Running/main.cpp b/Win8Running/main.cpp
+index 6df4cbb..51c500f 100644
+--- a/Win8Running/main.cpp
++++ b/Win8Running/main.cpp
+@@ -152,6 +152,11 @@ public:
+         if (i < 0 || i >= windows.size()) return;
+         run({"--close", windows[i].title});
+     }
++
++    Q_INVOKABLE void minimizeAll() {
++        for (const auto &w : windows)
++            run({"--minimize", w.title});
++    }
+     
+     Q_INVOKABLE int indexOfFocused() const {
+         for (int i = 0; i < windows.size(); ++i) {
+@@ -295,7 +300,7 @@ public:
+         qDebug() << "toggleExclusive called, new exclusive:" << exclusive;
+ 
+         if (exclusive) {
+-            layerShell->setExclusiveZone(window->width());
++            layerShell->setExclusiveZone(window->height());
+             layerShell->setKeyboardInteractivity(
+                 LayerShellQt::Window::KeyboardInteractivityOnDemand);
+         } else {
+@@ -468,10 +473,10 @@ int main(int argc, char *argv[]) {
+         LayerShellQt::Window::KeyboardInteractivityExclusive);
+     layer->setAnchors({
+         LayerShellQt::Window::AnchorTop,
+-        LayerShellQt::Window::AnchorBottom,
+-        LayerShellQt::Window::AnchorLeft
++        LayerShellQt::Window::AnchorLeft,
++        LayerShellQt::Window::AnchorRight
+     });
+-    layer->setExclusiveZone(0);
++    layer->setExclusiveZone(window->height());
+ 
+     window->setFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+     window->show();
+diff --git a/Win8Running/main.qml b/Win8Running/main.qml
+index 6e3f408..b5ea692 100644
+--- a/Win8Running/main.qml
++++ b/Win8Running/main.qml
+@@ -5,128 +5,114 @@ import Windows 1.0
+ 
+ ApplicationWindow {
+     id: root
+-    width: 300
+-    height: screen.height
+-    title: "Window Switcher"
++    width: screen.width
++    height: 54
++    title: "Taskbar"
+     color: "transparent"
+ 
+-    WindowModel {
+-        id: windowModel
+-    }
++    WindowModel { id: windowModel }
+ 
+     function focusIndex() {
+-        windowModel.reload();
+-        list.currentIndex = windowModel.indexOfFocused();
++        windowModel.reload()
++        list.currentIndex = windowModel.indexOfFocused()
+         if (list.currentIndex >= 0)
+-            list.positionViewAtIndex(list.currentIndex, ListView.Contain);
++            list.positionViewAtIndex(list.currentIndex, ListView.Center)
+     }
+ 
+     onVisibleChanged: {
+         if (visible)
+-            focusIndex();
++            focusIndex()
+     }
+ 
+-    /* ---------- Floating panel ---------- */
+     Rectangle {
+-        id: panel
++        id: bar
+         anchors.fill: parent
+-        anchors.margins: 10
+-        radius: 20
+-        color: "#E81B1B22"
+-        border.width: 1
+-        border.color: "#2EFFFFFF"
+-        clip: true
+-
+-        // soft top edge highlight
++        color: "#E81A1A20"
++
+         Rectangle {
+-            anchors.top: parent.top
+             anchors.left: parent.left
+             anchors.right: parent.right
++            anchors.bottom: parent.bottom
+             height: 1
+             color: "#26FFFFFF"
+         }
+ 
+-        /* ---------- Header ---------- */
+-        Item {
+-            id: header
+-            width: parent.width
+-            height: 50
+-
+-            Row {
+-                anchors.left: parent.left
+-                anchors.leftMargin: 16
+-                anchors.verticalCenter: parent.verticalCenter
+-                spacing: 8
+-
+-                Rectangle {
+-                    width: 7
+-                    height: 7
+-                    radius: 3.5
+-                    color: "#4CC2FF"
+-                    anchors.verticalCenter: parent.verticalCenter
+-                }
+-
+-                Text {
+-                    text: "RUNNING"
+-                    color: "#9AA1AC"
+-                    font.pixelSize: 10
+-                    font.letterSpacing: 1.6
+-                    font.weight: Font.DemiBold
+-                    anchors.verticalCenter: parent.verticalCenter
+-                }
+-
+-                Text {
+-                    text: list.count + (list.count === 1 ? " window" : " windows")
+-                    color: "#616874"
+-                    font.pixelSize: 10
+-                    anchors.verticalCenter: parent.verticalCenter
+-                }
+-            }
++        /* ---------- Start + window list ---------- */
++        Row {
++            id: leftGroup
++            anchors.left: parent.left
++            anchors.leftMargin: 10
++            anchors.verticalCenter: parent.verticalCenter
++            spacing: 8
+ 
+             Rectangle {
+-                id: hideButton
+-                width: 28
+-                height: 28
+-                radius: 14
+-                anchors.right: parent.right
+-                anchors.rightMargin: 12
+-                anchors.verticalCenter: parent.verticalCenter
+-                color: hideHover.hovered ? "#24FFFFFF" : "transparent"
++                id: startButton
++                width: 92
++                height: 38
++                radius: 11
++                color: startHover.hovered ? "#2BFFFFFF" : "#1AFFFFFF"
++                border.width: 1
++                border.color: startHover.hovered ? "#3A4CC2FF" : "#22FFFFFF"
+ 
+                 Behavior on color { ColorAnimation { duration: 120 } }
+ 
+-                Text {
++                Row {
+                     anchors.centerIn: parent
+-                    text: "×"
+-                    color: "#AEB4BE"
+-                    font.pixelSize: 18
+-                }
++                    spacing: 9
++
++                    Grid {
++                        columns: 2
++                        spacing: 3
++                        anchors.verticalCenter: parent.verticalCenter
++
++                        Repeater {
++                            model: 4
++                            Rectangle {
++                                width: 8
++                                height: 8
++                                radius: 2
++                                color: "#4CC2FF"
++                            }
++                        }
++                    }
+ 
+-                HoverHandler {
+-                    id: hideHover
++                    Text {
++                        text: "Start"
++                        color: "#F2F4F8"
++                        font.pixelSize: 13
++                        font.weight: Font.DemiBold
++                    }
+                 }
+ 
++                HoverHandler { id: startHover }
++
+                 MouseArea {
+                     anchors.fill: parent
+-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+-                    onClicked: function (mouse) {
+-                        if (mouse.button === Qt.LeftButton)
+-                            WindowController.hide();
+-                        else
+-                            WindowController.toggleExclusive();
++                    cursorShape: Qt.PointingHandCursor
++                    onClicked: {
++                        Launcher.launchDetached("Win8Start")
++                        WindowController.hide()
+                     }
+                 }
+             }
++
++            Rectangle {
++                width: 1
++                height: 24
++                color: "#22FFFFFF"
++                anchors.verticalCenter: parent.verticalCenter
++            }
+         }
+ 
+-        /* ---------- Window list ---------- */
+         ListView {
+             id: list
+-            anchors.top: header.bottom
+-            anchors.left: parent.left
+-            anchors.right: parent.right
+-            anchors.bottom: startBtn.top
+-            anchors.margins: 10
++            anchors.left: leftGroup.right
++            anchors.leftMargin: 8
++            anchors.right: rightGroup.left
++            anchors.rightMargin: 10
++            anchors.verticalCenter: parent.verticalCenter
++            height: 40
++            orientation: ListView.Horizontal
+             spacing: 6
+             clip: true
+             model: windowModel
+@@ -137,50 +123,38 @@ ApplicationWindow {
+ 
+             Keys.onPressed: function (event) {
+                 if (list.count === 0)
+-                    return;
++                    return
+                 switch (event.key) {
+-                case Qt.Key_Down:
++                case Qt.Key_Right:
+                 case Qt.Key_Tab:
+-                case Qt.Key_J:
+-                    list.currentIndex = (list.currentIndex + 1) % list.count;
+-                    windowModel.activate(list.currentIndex);
+-                    event.accepted = true;
+-                    break;
+-                case Qt.Key_Up:
++                    list.currentIndex = (list.currentIndex + 1) % list.count
++                    windowModel.activate(list.currentIndex)
++                    event.accepted = true
++                    break
++                case Qt.Key_Left:
+                 case Qt.Key_Backtab:
+-                case Qt.Key_K:
+-                    list.currentIndex = (list.currentIndex - 1 + list.count) % list.count;
+-                    windowModel.activate(list.currentIndex);
+-                    event.accepted = true;
+-                    break;
++                    list.currentIndex = (list.currentIndex - 1 + list.count) % list.count
++                    windowModel.activate(list.currentIndex)
++                    event.accepted = true
++                    break
+                 case Qt.Key_Return:
+                 case Qt.Key_Enter:
+                     if (list.currentIndex >= 0) {
+-                        windowModel.activate(list.currentIndex);
++                        windowModel.activate(list.currentIndex)
+                         if (!WindowController.exclusive)
+-                            WindowController.hide();
++                            WindowController.hide()
+                     }
+-                    event.accepted = true;
+-                    break;
++                    event.accepted = true
++                    break
+                 case Qt.Key_Escape:
+-                    WindowController.hide();
+-                    event.accepted = true;
+-                    break;
+-                case Qt.Key_X:
+-                    if (list.currentIndex >= 0)
+-                        windowModel.close(list.currentIndex);
+-                    event.accepted = true;
+-                    break;
+-                case Qt.Key_M:
+-                    if (list.currentIndex >= 0)
+-                        windowModel.minimize(list.currentIndex);
+-                    event.accepted = true;
+-                    break;
++                    WindowController.hide()
++                    event.accepted = true
++                    break
+                 }
+             }
+ 
+             delegate: Rectangle {
+-                id: item
++                id: chip
+ 
+                 required property bool focused
+                 required property bool maximized
+@@ -191,256 +165,222 @@ ApplicationWindow {
+                 required property int index
+ 
+                 readonly property bool selected: ListView.isCurrentItem
+-                readonly property bool hovering: itemHover.hovered
++                readonly property bool hovering: chipHover.hovered
+ 
+-                width: list.width
+-                height: 66
+-                radius: 12
++                width: 178
++                height: 40
++                radius: 10
+                 color: selected ? "#2A3945" : (hovering ? "#16FFFFFF" : "transparent")
+                 border.width: selected ? 1 : 0
+                 border.color: "#5A4CC2FF"
+ 
+-                Behavior on color { ColorAnimation { duration: 120 } }
++                Behavior on color { ColorAnimation { duration: 110 } }
+ 
+-                // accent bar for the focused/selected window
+                 Rectangle {
+                     width: 3
+-                    height: parent.height - 20
++                    height: 18
+                     radius: 2
+                     anchors.left: parent.left
+                     anchors.leftMargin: 1
+                     anchors.verticalCenter: parent.verticalCenter
+                     color: "#4CC2FF"
+-                    opacity: item.focused || item.selected ? 1 : 0
++                    opacity: chip.focused || chip.selected ? 1 : 0
+                 }
+ 
+                 Rectangle {
+-                    id: iconFallback
+-                    width: 34
+-                    height: 34
+-                    radius: 9
++                    id: chipFallback
++                    width: 22
++                    height: 22
++                    radius: 6
+                     color: "#2A2A33"
+                     anchors.left: parent.left
+-                    anchors.leftMargin: 14
++                    anchors.leftMargin: 10
+                     anchors.verticalCenter: parent.verticalCenter
+-                    visible: iconImage.status !== Image.Ready
++                    visible: chipIcon.status !== Image.Ready
+ 
+                     Text {
+                         anchors.centerIn: parent
+-                        text: (item.title || item.appId || "?").charAt(0).toUpperCase()
++                        text: (chip.title || chip.appId || "?").charAt(0).toUpperCase()
+                         color: "#9AA1AC"
+-                        font.pixelSize: 16
++                        font.pixelSize: 11
+                         font.weight: Font.DemiBold
+                     }
+                 }
+ 
+                 Image {
+-                    id: iconImage
++                    id: chipIcon
+                     anchors.left: parent.left
+-                    anchors.leftMargin: 14
++                    anchors.leftMargin: 10
+                     anchors.verticalCenter: parent.verticalCenter
+-                    width: 34
+-                    height: 34
+-                    source: item.iconPath
++                    width: 22
++                    height: 22
++                    source: chip.iconPath
+                     fillMode: Image.PreserveAspectFit
+                     visible: status === Image.Ready
+                 }
+ 
+-                Column {
+-                    anchors.left: iconImage.right
+-                    anchors.leftMargin: 12
+-                    anchors.right: controls.left
+-                    anchors.rightMargin: 8
++                Text {
++                    anchors.left: chipIcon.right
++                    anchors.leftMargin: 8
++                    anchors.right: closeButton.left
++                    anchors.rightMargin: 4
+                     anchors.verticalCenter: parent.verticalCenter
+-                    spacing: 3
+-
+-                    Text {
+-                        width: parent.width
+-                        text: item.title || item.appId
+-                        color: "#F2F4F8"
+-                        font.pixelSize: 13
+-                        font.weight: Font.DemiBold
+-                        elide: Text.ElideRight
+-                    }
+-
+-                    Text {
+-                        width: parent.width
+-                        text: item.appId
+-                        color: "#868D98"
+-                        font.pixelSize: 10
+-                        elide: Text.ElideRight
+-                        visible: item.title !== item.appId
+-                    }
++                    text: chip.title || chip.appId
++                    color: "#F2F4F8"
++                    font.pixelSize: 12
++                    elide: Text.ElideRight
+                 }
+ 
+-                /* hover controls */
+-                Row {
+-                    id: controls
++                Rectangle {
++                    id: closeButton
++                    width: 20
++                    height: 20
++                    radius: 10
+                     anchors.right: parent.right
+-                    anchors.rightMargin: 10
++                    anchors.rightMargin: 6
+                     anchors.verticalCenter: parent.verticalCenter
+-                    spacing: 4
+-                    opacity: item.hovering || item.selected ? 1 : 0
+-
+-                    Behavior on opacity { NumberAnimation { duration: 120 } }
+-
+-                    Rectangle {
+-                        width: 22
+-                        height: 22
+-                        radius: 11
+-                        color: minHover.hovered ? "#2BFFFFFF" : "#14FFFFFF"
+-
+-                        Text {
+-                            anchors.centerIn: parent
+-                            text: "–"
+-                            color: "#C6CBD3"
+-                            font.pixelSize: 13
+-                        }
+-
+-                        HoverHandler { id: minHover }
+-
+-                        MouseArea {
+-                            anchors.fill: parent
+-                            onClicked: windowModel.minimize(item.index)
+-                        }
+-                    }
+-
+-                    Rectangle {
+-                        width: 22
+-                        height: 22
+-                        radius: 11
+-                        color: maxHover.hovered ? "#2BFFFFFF" : "#14FFFFFF"
+-
+-                        Text {
+-                            anchors.centerIn: parent
+-                            text: item.maximized ? "❐" : "□"
+-                            color: "#C6CBD3"
+-                            font.pixelSize: 11
+-                        }
++                    color: closeHover.hovered ? "#40FF5F57" : "transparent"
++                    opacity: chip.hovering || chip.selected ? 1 : 0
+ 
+-                        HoverHandler { id: maxHover }
++                    Behavior on opacity { NumberAnimation { duration: 110 } }
+ 
+-                        MouseArea {
+-                            anchors.fill: parent
+-                            onClicked: {
+-                                item.maximized
+-                                    ? windowModel.unmaximize(item.index)
+-                                    : windowModel.maximize(item.index)
+-                            }
+-                        }
++                    Text {
++                        anchors.centerIn: parent
++                        text: "×"
++                        color: closeHover.hovered ? "#FFB4B0" : "#AEB4BE"
++                        font.pixelSize: 12
+                     }
+ 
+-                    Rectangle {
+-                        width: 22
+-                        height: 22
+-                        radius: 11
+-                        color: closeHover.hovered ? "#40FF5F57" : "#14FFFFFF"
+-
+-                        Text {
+-                            anchors.centerIn: parent
+-                            text: "×"
+-                            color: closeHover.hovered ? "#FFB4B0" : "#C6CBD3"
+-                            font.pixelSize: 13
+-                        }
+-
+-                        HoverHandler { id: closeHover }
++                    HoverHandler { id: closeHover }
+ 
+-                        MouseArea {
+-                            anchors.fill: parent
+-                            onClicked: windowModel.close(item.index)
+-                        }
++                    MouseArea {
++                        anchors.fill: parent
++                        onClicked: windowModel.close(chip.index)
+                     }
+                 }
+ 
+                 HoverHandler {
+-                    id: itemHover
++                    id: chipHover
+                     onHoveredChanged: {
+                         if (hovered)
+-                            list.currentIndex = item.index;
++                            list.currentIndex = chip.index
+                     }
+                 }
+ 
+                 MouseArea {
+                     anchors.fill: parent
+                     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
++                    cursorShape: Qt.PointingHandCursor
+ 
+                     onClicked: function (mouse) {
+-                        list.currentIndex = item.index;
++                        list.currentIndex = chip.index
+                         if (mouse.button === Qt.MiddleButton) {
+-                            windowModel.close(item.index);
++                            windowModel.close(chip.index)
+                         } else if (mouse.button === Qt.RightButton) {
+-                            windowModel.activateOnly(item.index);
++                            windowModel.activateOnly(chip.index)
+                         } else {
+-                            windowModel.activate(item.index);
++                            windowModel.activate(chip.index)
+                             if (!WindowController.exclusive)
+-                                WindowController.hide();
++                                WindowController.hide()
+                         }
+                     }
+                 }
+             }
+ 
+             Text {
+-                anchors.centerIn: parent
++                anchors.verticalCenter: parent.verticalCenter
++                anchors.left: parent.left
++                anchors.leftMargin: 6
+                 visible: list.count === 0
+                 text: "No open windows"
+                 color: "#6B7280"
+-                font.pixelSize: 12
++                font.pixelSize: 11
+             }
+         }
+ 
+-        /* ---------- Start button ---------- */
+-        Rectangle {
+-            id: startBtn
+-            anchors.left: parent.left
++        /* ---------- Clock / desktop ---------- */
++        Row {
++            id: rightGroup
+             anchors.right: parent.right
+-            anchors.bottom: parent.bottom
+-            anchors.margins: 10
+-            height: 54
+-            radius: 14
+-            color: startHover.hovered ? "#2C2C36" : "#232330"
+-            border.width: 1
+-            border.color: startHover.hovered ? "#3A4CC2FF" : "#22FFFFFF"
+-
+-            Behavior on color { ColorAnimation { duration: 120 } }
+-
+-            Row {
+-                anchors.centerIn: parent
+-                spacing: 12
+-
+-                Grid {
+-                    columns: 2
+-                    spacing: 3
+-                    anchors.verticalCenter: parent.verticalCenter
++            anchors.rightMargin: 12
++            anchors.verticalCenter: parent.verticalCenter
++            spacing: 10
+ 
+-                    Repeater {
+-                        model: 4
+-                        Rectangle {
+-                            width: 9
+-                            height: 9
+-                            radius: 2
+-                            color: "#4CC2FF"
+-                        }
+-                    }
+-                }
++            Text {
++                id: windowCount
++                text: list.count
++                color: "#6B7280"
++                font.pixelSize: 10
++                anchors.verticalCenter: parent.verticalCenter
++            }
++
++            Column {
++                spacing: 1
++                anchors.verticalCenter: parent.verticalCenter
+ 
+                 Text {
+-                    text: "Start"
++                    id: clockTime
++                    text: "00:00"
+                     color: "#F2F4F8"
+                     font.pixelSize: 14
+                     font.weight: Font.DemiBold
+                 }
+-            }
+ 
+-            HoverHandler {
+-                id: startHover
++                Text {
++                    id: clockDate
++                    text: ""
++                    color: "#868D98"
++                    font.pixelSize: 9
++                }
+             }
+ 
+-            MouseArea {
+-                anchors.fill: parent
+-                onClicked: {
+-                    Launcher.launchDetached("Win8Start")
+-                    WindowController.hide()
++            Rectangle {
++                id: showDesktop
++                width: 34
++                height: 34
++                radius: 9
++                color: desktopHover.hovered ? "#2BFFFFFF" : "transparent"
++
++                Behavior on color { ColorAnimation { duration: 110 } }
++
++                Rectangle {
++                    anchors.centerIn: parent
++                    width: 15
++                    height: 11
++                    radius: 2
++                    color: "transparent"
++                    border.width: 1.4
++                    border.color: desktopHover.hovered ? "#4CC2FF" : "#C6CBD3"
+                 }
++
++                Rectangle {
++                    anchors.horizontalCenter: parent.horizontalCenter
++                    anchors.top: parent.verticalCenter
++                    anchors.topMargin: 5
++                    width: 7
++                    height: 1.5
++                    color: desktopHover.hovered ? "#4CC2FF" : "#C6CBD3"
++                }
++
++                HoverHandler { id: desktopHover }
++
++                MouseArea {
++                    anchors.fill: parent
++                    cursorShape: Qt.PointingHandCursor
++                    onClicked: windowModel.minimizeAll()
++                }
++            }
++        }
++
++        Timer {
++            interval: 1000
++            running: true
++            repeat: true
++            triggeredOnStart: true
++            onTriggered: {
++                const now = new Date()
++                clockTime.text = Qt.formatDateTime(now, "HH:mm")
++                clockDate.text = Qt.formatDateTime(now, "ddd, dd MMM")
+             }
+         }
+     }
+diff --git a/Win8Start/main.qml b/Win8Start/main.qml
+index 4c927f6..b8438e2 100644
+--- a/Win8Start/main.qml
++++ b/Win8Start/main.qml
+@@ -21,6 +21,11 @@ ApplicationWindow {
+         source: startWallpaper // choose from Win8Settings
+         fillMode: Image.PreserveAspectCrop
+     }
++
++    Rectangle {
++        anchors.fill: parent
++        color: "#66060A12"
++    }
+ //======================================HIDE/CLOSE=======================================
+     
+     // area at bottom to hide the start screen on click
+@@ -196,13 +201,14 @@ ApplicationWindow {
+                 id: start
+                 text: "Start"
+                 color: "white"
+-                font.pixelSize: 60
+-                font.weight: Font.Thin
++                font.pixelSize: 46
++                font.weight: Font.Medium
++                font.letterSpacing: 0.5
+                 anchors.left: parent.left
+                 anchors.top: parent.top
+                 anchors.margins: parent.height / 3
+                 anchors.leftMargin: parent.width / 18
+-                anchors.topMargin: 50
++                anchors.topMargin: 34
+             }
+             
+             // Battery display next to "Start"
+@@ -221,7 +227,7 @@ ApplicationWindow {
+                     y: batteryOutline.y + 2
+                     height: batteryOutline.height - 4
+                     width: (batteryOutline.width - 4) * Math.min(Math.max(battery.percent / 100, 0), 1)
+-                    radius: 0
++                    radius: 3
+                     color: battery.charging ? "#FFD700"  // gold/yellow for charging
+                     : battery.percent < 20 ? "#FF4C4C" // red for low
+                     : "white"  // green for normal
+@@ -231,21 +237,21 @@ ApplicationWindow {
+                 // Outer battery shape
+                 Rectangle {
+                     id: batteryOutline
+-                    width: 50
+-                    height: 30
+-                    radius: 0
++                    width: 36
++                    height: 18
++                    radius: 5
+                     color: "transparent"
+-                    border.color: "white"
+-                    border.width: 4
++                    border.color: "#D7DCE4"
++                    border.width: 2
+                     anchors.left: parent.left
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+                 
+                 // Battery tip (small rounded rectangle)
+                 Rectangle {
+-                    width: 6
+-                    height: batteryOutline.height / 2
+-                    radius: 0
++                    width: 4
++                    height: 8
++                    radius: 2
+                     color: "#CCCCCC"
+                     anchors.left: batteryOutline.right
+                     anchors.verticalCenter: batteryOutline.verticalCenter
+@@ -256,11 +262,11 @@ ApplicationWindow {
+                     id: batteryPercent
+                     text: battery.percent >= 0 ? battery.percent + "%" : "N/A"
+                     color: "#FFFFFF"
+-                    font.pixelSize: 30
+-                    font.weight: Font.Thin
++                    font.pixelSize: 16
++                    font.weight: Font.Medium
+                     anchors.verticalCenter: batteryOutline.verticalCenter
+                     anchors.left: batteryOutline.right
+-                    anchors.leftMargin: 12
++                    anchors.leftMargin: 8
+                 }
+                 
+                 // Optional: subtle shadow behind battery
+@@ -272,6 +278,53 @@ ApplicationWindow {
+                     
+                 }
+             }
++            // modern global search entry
++            Rectangle {
++                id: searchPill
++                width: Math.min(380, topstrip.width / 3)
++                height: 40
++                radius: 20
++                color: searchHover.hovered ? "#2AFFFFFF" : "#1FFFFFFF"
++                border.width: 1
++                border.color: "#33FFFFFF"
++                anchors.horizontalCenter: parent.horizontalCenter
++                anchors.verticalCenter: start.verticalCenter
++
++                Behavior on color { ColorAnimation { duration: 120 } }
++
++                Row {
++                    anchors.centerIn: parent
++                    spacing: 9
++
++                    Rectangle {
++                        width: 12
++                        height: 12
++                        radius: 6
++                        color: "transparent"
++                        border.width: 1.5
++                        border.color: "#C6CBD3"
++                    }
++
++                    Text {
++                        text: "Search apps"
++                        color: "#C6CBD3"
++                        font.pixelSize: 13
++                    }
++                }
++
++                HoverHandler { id: searchHover }
++
++                MouseArea {
++                    anchors.fill: parent
++                    cursorShape: Qt.PointingHandCursor
++                    onClicked: {
++                        allapparea.y = 0
++                        appGridView.focus = true
++                        searchField.focus = true
++                    }
++                }
++            }
++
+             // the user icon at top right hosts power menu and settings.
+             Item {
+                 id: userCard
+@@ -292,29 +345,33 @@ ApplicationWindow {
+                     Text {
+                         text: AppLauncher.getCurrentUser()
+                         color: "white"
+-                        font.pixelSize: 40
+-                        font.weight: Font.Thin
++                        font.pixelSize: 22
++                        font.weight: Font.Medium
+                         verticalAlignment: Text.AlignVCenter
+                     }
+                     Rectangle {
+-                        width: 48
+-                        height: 48
+-                        color: Win8Colors.Tile
+-                        
++                        width: 42
++                        height: 42
++                        radius: 21
++                        clip: true
++                        color: "#22FFFFFF"
++                        border.width: 1
++                        border.color: "#33FFFFFF"
++
+                         //backup user icon
+                         Image {
+                             id: userIcon
+                             source: "icons/peoplew.png"
+-                            width: 48
+-                            height: 48
++                            width: 42
++                            height: 42
+                             fillMode: Image.PreserveAspectFit
+                         }
+                         //icon set for linux account.
+                         Image {
+                             id: userIcon2
+                             source: "file:///var/lib/AccountsService/icons/" + AppLauncher.getCurrentUser()
+-                            width: 48
+-                            height: 48
++                            width: 42
++                            height: 42
+                             fillMode: Image.PreserveAspectFit
+                         }
+                     }
+@@ -419,27 +476,39 @@ ApplicationWindow {
+             // button to open all apps section.
+             Rectangle {
+                 id: allAppsButton
+-                width: 50
+-                height: 50
+-                radius: width/2
+-                border.width: 2
+-                border.color: "white"
+-                color: "transparent"
++                width: 126
++                height: 42
++                radius: 21
++                border.width: 1
++                border.color: "#33FFFFFF"
++                color: allAppsHover.hovered ? "#2AFFFFFF" : "#1AFFFFFF"
+                 anchors.left: parent.left
+                 anchors.bottom: parent.bottom
+                 anchors.margins: parent.height / 3
+                 anchors.leftMargin: parent.width / 18
+-                
+-                Image {
+-                    id: iconImg
++
++                Behavior on color { ColorAnimation { duration: 120 } }
++
++                Row {
+                     anchors.centerIn: parent
+-                    width: 40
+-                    height: 40
+-                    source: "icons/go-down-skip.svg"
+-                    sourceSize.width: 50
+-                    sourceSize.height: 50
+-                    fillMode: Image.PreserveAspectFit
++                    spacing: 8
++
++                    Text {
++                        text: "⌄"
++                        color: "#F2F4F8"
++                        font.pixelSize: 18
++                        font.weight: Font.DemiBold
++                    }
++
++                    Text {
++                        text: "All apps"
++                        color: "#F2F4F8"
++                        font.pixelSize: 13
++                        font.weight: Font.DemiBold
++                    }
+                 }
++
++                HoverHandler { id: allAppsHover }
+                 
+                 MouseArea {
+                     id: mouseArea
+@@ -500,7 +569,7 @@ ApplicationWindow {
+                 property bool anyTileLaunching: false
+                 property int gridSize: tilearea.height/4
+                 property int halfGrid: gridSize / 2
+-                property int tileGap: 5
++                property int tileGap: 8
+                 property int cols: Math.floor(width / halfGrid)
+                 property int focusedIndex: -1
+                 
+@@ -918,8 +987,9 @@ ApplicationWindow {
+                     
+                     Rectangle {
+                         id: tile
+-                        z: (launching || dragArea.dragging) ? 200 : 0
++                        z: (launching || dragArea.dragging) ? 200 : (hovered ? 50 : 0)
+                         clip: true
++                        radius: 12
+                         // --- Size handling ---
+                         
+                         required property int index
+@@ -985,11 +1055,11 @@ ApplicationWindow {
+                             }
+                         }
+                         
+-                        border.width: (!suppressBorder && (container.focusedIndex === index || hovered)) ? 1 : 0
+-                        
+-                        border.color: container.focusedIndex === index || hovered
+-                        ? "#949494"
+-                        : Qt.rgba(1,1,1,0.2)
++                        border.width: 1
++
++                        border.color: (container.focusedIndex === index || hovered)
++                        ? "#804CC2FF"
++                        : Qt.rgba(1,1,1,0.14)
+                         
+                         Behavior on color {
+                             ColorAnimation { duration: 180 }
+@@ -1776,35 +1846,29 @@ ApplicationWindow {
+             Text {
+                 id: apps
+                 text: "Apps"
+-                font.pixelSize: 60
++                font.pixelSize: 44
+                 color: "white"
+-                font.weight: Font.Thin
++                font.weight: Font.Medium
++                font.letterSpacing: 0.5
+                 anchors.left: parent.left
+                 anchors.top: parent.top
+                 anchors.margins: parent.height / 3
+                 anchors.leftMargin: parent.width / 18
+-                anchors.topMargin: 50
++                anchors.topMargin: 34
+             }
+             Text {
+                 id: by
+-                anchors.left: apps.right
+-                anchors.bottom: apps.bottom
+-                anchors.leftMargin: 20
+-                anchors.bottomMargin: 10
+-                text: "by"
+-                font.pixelSize: 30
+-                font.weight: Font.Thin
+-                
++                visible: false
+             }
+             ComboBox {
+                 id: categoryFilter
+                 anchors.verticalCenter: apps.verticalCenter
+                 anchors.left: by.right
+                 anchors.leftMargin: 20
+-                width: 500
+-                height: apps.height
+-                font.pixelSize: 50
+-                font.weight: Font.Thin
++                width: 220
++                height: 40
++                font.pixelSize: 15
++                font.weight: Font.Medium
+                 model: ["All", "Utility", "Development", "Network", "Office", "AudioVideo", "Game", "System", "Graphics", "KDE", "Gnome"] // populate dynamically if needed
+                 currentIndex: 0
+                 
+@@ -1833,9 +1897,12 @@ ApplicationWindow {
+                 anchors.margins: 30
+                 anchors.leftMargin: 120
+                 anchors.topMargin: 50
+-                height: 50
+-                width: 350
+-                color: Win8Colors.Tile
++                height: 42
++                width: 340
++                radius: 21
++                color: "#1FFFFFFF"
++                border.width: 1
++                border.color: "#33FFFFFF"
+                 
+                 Row {
+                     anchors.fill: parent
+@@ -1844,22 +1911,22 @@ ApplicationWindow {
+                     
+                     Image {
+                         anchors.verticalCenter: parent.verticalCenter
+-                        width: 30
+-                        height: 30
++                        width: 22
++                        height: 22
+                         source: "icons/search.svg"
+-                        sourceSize.width: 30
+-                        sourceSize.height: 30
++                        sourceSize.width: 22
++                        sourceSize.height: 22
+                     }
+                     
+                     TextField {
+                         id: searchField
+-                        width: 300
+-                        height: 50
++                        width: 290
++                        height: 42
+                         placeholderText: "Search apps…"
+                         color: "white"
+                         background: null
+                         placeholderTextColor: "#888888"
+-                        font.pointSize: 16
++                        font.pointSize: 14
+                         onTextChanged: {
+                             appModel.search(text)
+                             appGridView.currentIndex = 0   // ⭐ reset selection
+@@ -1917,27 +1984,39 @@ ApplicationWindow {
+             height: bottomstrip.height
+             Rectangle {
+                 id: allAppsButton2
+-                width: 50
+-                height: 50
+-                radius: width/2
+-                border.width: 2
+-                border.color: "white"
+-                color: "transparent"
++                width: 104
++                height: 42
++                radius: 21
++                border.width: 1
++                border.color: "#33FFFFFF"
++                color: backHover.hovered ? "#2AFFFFFF" : "#1AFFFFFF"
+                 anchors.left: parent.left
+                 anchors.bottom: parent.bottom
+                 anchors.margins: parent.height / 3
+                 anchors.leftMargin: parent.width / 18
+-                
+-                Image {
+-                    id: iconImg2
++
++                Behavior on color { ColorAnimation { duration: 120 } }
++
++                Row {
+                     anchors.centerIn: parent
+-                    width: 40
+-                    height: 40
+-                    source: "icons/go-up-skip.svg"
+-                    sourceSize.width: 50
+-                    sourceSize.height: 50
+-                    fillMode: Image.PreserveAspectFit
++                    spacing: 8
++
++                    Text {
++                        text: "⌃"
++                        color: "#F2F4F8"
++                        font.pixelSize: 18
++                        font.weight: Font.DemiBold
++                    }
++
++                    Text {
++                        text: "Back"
++                        color: "#F2F4F8"
++                        font.pixelSize: 13
++                        font.weight: Font.DemiBold
++                    }
+                 }
++
++                HoverHandler { id: backHover }
+                 
+                 MouseArea {
+                     anchors.fill: parent
+@@ -2204,9 +2283,10 @@ ApplicationWindow {
+                     Rectangle {
+                         id: appRect
+                         width: parent.width - 10
+-                        height: 50
++                        height: 54
++                        radius: 10
+                         clip: apptilecol.launching ? false : true
+-                        color: appGridView.currentIndex === apptilecol.index ? "#0078D7" : "transparent"
++                        color: appGridView.currentIndex === apptilecol.index ? "#2A3945" : "transparent"
+                         Behavior on color {
+                             ColorAnimation { duration: 180 }
+                         }
+@@ -2223,7 +2303,8 @@ ApplicationWindow {
+                                 id: allapptile
+                                 width: 40
+                                 height: 40
+-                                color: Win8Colors.Tile
++                                radius: 9
++                                color: "#22FFFFFF"
+                                 transformOrigin: Item.Center
+                                 
+                                 transform: [

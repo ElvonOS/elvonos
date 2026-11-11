@@ -1,0 +1,214 @@
+diff --git a/Win8Running/main.cpp b/Win8Running/main.cpp
+index 8226179..369d919 100644
+--- a/Win8Running/main.cpp
++++ b/Win8Running/main.cpp
+@@ -281,6 +281,13 @@ public:
+                               QObject *parent = nullptr)
+     : QObject(parent), window(w), layerShell(layer) {}
+ 
++    void attach(QQuickWindow *w, LayerShellQt::Window *layer) {
++        window = w;
++        layerShell = layer;
++        emit visibleChanged();
++        emit exclusiveChanged();
++    }
++
+     Q_INVOKABLE void toggleExclusive() {
+         if (!window || !layerShell) return;
+ 
+@@ -396,8 +403,48 @@ int main(int argc, char *argv[]) {
+         return 0;  // Existing instance toggled, exit
+     }
+     
+-    // Load QML engine
++    // QML engine + backend objects must be registered before load()
+     QQmlApplicationEngine engine;
++
++    /* ---------------- WindowController ---------------- */
++    auto *controller = new WindowController(nullptr, nullptr, &app);
++    engine.rootContext()->setContextProperty("WindowController", controller);
++
++    /* ------------------- launcher --------------------- */
++    auto *launcher = new Launcher(&app);
++    engine.rootContext()->setContextProperty("Launcher", launcher);
++
++    // --------------------------------------------------------
++    // Win8Settings path
++    // --------------------------------------------------------
++    const QString settingsPath =
++    QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) +
++    "/Win8Settings/settings.ini";
++
++    // --------------------------------------------------------
++    // Helper: load colors
++    // --------------------------------------------------------
++    QVariantMap win8Colors;
++
++    auto loadSettings = [&]() {
++        QSettings s(settingsPath, QSettings::IniFormat);
++
++        // ---- Colors ----
++        s.beginGroup("Colors");
++        win8Colors["Background"] = s.value("Background", "#000000").toString();
++        win8Colors["Tile"] = s.value("Tile", "#ffffff").toString();
++        win8Colors["TileHighlight"] =
++        s.value("TileHighlight", "#ff0000").toString();
++        s.endGroup();
++    };
++
++    // Initial load
++    loadSettings();
++
++    engine.rootContext()->setContextProperty("Win8Colors",
++                                             QVariant::fromValue(win8Colors));
++
++    // Load QML engine
+     engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
+     if (engine.rootObjects().isEmpty()) return -1;
+ 
+@@ -419,46 +466,7 @@ int main(int argc, char *argv[]) {
+     window->setFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+     window->show();
+ 
+-    /* ---------------- WindowController ---------------- */
+-    auto *controller = new WindowController(window, layer, &app);
+-    engine.rootContext()->setContextProperty("WindowController", controller);
+-    
+-    /* ------------------- launcher --------------------- */
+-    auto *launcher = new Launcher(&app);
+-    engine.rootContext()->setContextProperty("Launcher", launcher);
+-    
+-
+-    // --------------------------------------------------------
+-    // Win8Settings path
+-    // --------------------------------------------------------
+-    const QString settingsPath =
+-    QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) +
+-    "/Win8Settings/settings.ini";
+-        
+-        // --------------------------------------------------------
+-        // Helper: load Start wallpaper + colors
+-        // --------------------------------------------------------
+-        QVariantMap win8Colors;
+-        
+-        auto loadSettings = [&]() {
+-            QSettings s(settingsPath, QSettings::IniFormat);
+-            
+-            // ---- Colors ----
+-            s.beginGroup("Colors");
+-            win8Colors["Background"] = s.value("Background", "#000000").toString();
+-            win8Colors["Tile"] = s.value("Tile", "#ffffff").toString();
+-            win8Colors["TileHighlight"] =
+-            s.value("TileHighlight", "#ff0000").toString();
+-            s.endGroup();
+-        };
+-        
+-        // Initial load
+-        loadSettings();
+-        
+-        engine.rootContext()->setContextProperty("Win8Colors",
+-                                                 QVariant::fromValue(win8Colors));
+-        
+-        
++    controller->attach(window, layer);
+     auto *model = engine.rootObjects().first()
+     ->findChild<WindowModel *>();
+     
+diff --git a/Win8Running/main.qml b/Win8Running/main.qml
+index bbf24f6..cdaef5e 100644
+--- a/Win8Running/main.qml
++++ b/Win8Running/main.qml
+@@ -5,7 +5,6 @@ import Windows 1.0
+ 
+ ApplicationWindow {
+     id: root
+-    visible: false
+     width: 240
+     height: screen.height
+     title: "Window Switcher"
+@@ -63,7 +62,7 @@ ApplicationWindow {
+     Item {
+         width: parent.width
+         height: parent.height
+-        x: root.visible ? 0 : -width
++        x: 0
+         
+         Behavior on x {
+             NumberAnimation {
+diff --git a/Win8Start/main.cpp b/Win8Start/main.cpp
+index d9b9f86..c836b1e 100644
+--- a/Win8Start/main.cpp
++++ b/Win8Start/main.cpp
+@@ -1762,7 +1762,7 @@ int main(int argc, char *argv[]) {
+       startWallpaper = QUrl::fromLocalFile(startPath).toString();
+       qDebug() << "🖼 Start wallpaper loaded:" << startWallpaper;
+     } else {
+-      startWallpaper = "qrc:/fallbacks/start-bg.png";
++      startWallpaper = "qrc:/background.jpg";
+       qWarning() << "⚠️ Using fallback start wallpaper";
+     }
+ 
+@@ -1811,6 +1811,26 @@ int main(int argc, char *argv[]) {
+         }
+       });
+ 
++  // --------------------------------------------------------
++  // Backend objects (must exist before QML is evaluated)
++  // --------------------------------------------------------
++  AppLauncher launcher;
++  AppModel appModel;
++  TileModel tileModel;
++  PowerControl powerControl;
++  Launcher launcherQml;
++  DesktopActionModel actionModel;
++  WindowController windowController;
++
++  engine.rootContext()->setContextProperty("AppLauncher", &launcher);
++  engine.rootContext()->setContextProperty("appModel", &appModel);
++  engine.rootContext()->setContextProperty("tileModel", &tileModel);
++  engine.rootContext()->setContextProperty("powerControl", &powerControl);
++  engine.rootContext()->setContextProperty("Launcher", &launcherQml);
++  engine.rootContext()->setContextProperty("actionModel", &actionModel);
++  engine.rootContext()->setContextProperty("WindowController",
++                                           &windowController);
++
+   // --------------------------------------------------------
+   // Load QML
+   // --------------------------------------------------------
+@@ -1876,9 +1896,8 @@ int main(int argc, char *argv[]) {
+   window->showFullScreen();
+ 
+   // --------------------------------------------------------
+-  // Window controller
++  // Window controller (attach after QML window exists)
+   // --------------------------------------------------------
+-  WindowController windowController;
+   windowController.setWindow(window);
+ 
+   QObject::connect(window, &QQuickWindow::activeChanged, [&]() {
+@@ -1893,25 +1912,6 @@ int main(int argc, char *argv[]) {
+   QObject::connect(&instance, &SingleInstance::activateRequested,
+                    [&]() { windowController.toggle(); });
+ 
+-  // --------------------------------------------------------
+-  // Backend objects
+-  // --------------------------------------------------------
+-  AppLauncher launcher;
+-  AppModel appModel;
+-  TileModel tileModel;
+-  PowerControl powerControl;
+-  Launcher launcherQml;
+-
+-  engine.rootContext()->setContextProperty("AppLauncher", &launcher);
+-  engine.rootContext()->setContextProperty("appModel", &appModel);
+-  engine.rootContext()->setContextProperty("tileModel", &tileModel);
+-  engine.rootContext()->setContextProperty("powerControl", &powerControl);
+-  engine.rootContext()->setContextProperty("Launcher", &launcherQml);
+-  engine.rootContext()->setContextProperty("WindowController",
+-                                           &windowController);
+-  DesktopActionModel actionModel;
+-  engine.rootContext()->setContextProperty("actionModel", &actionModel);
+-
+   // --------------------------------------------------------
+   // Async application loading
+   // --------------------------------------------------------

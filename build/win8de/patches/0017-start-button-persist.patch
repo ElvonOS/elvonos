@@ -1,0 +1,11 @@
+diff --git a/Win8Running/main.qml b/Win8Running/main.qml
+--- a/Win8Running/main.qml
++++ b/Win8Running/main.qml
+@@ -185,7 +185,6 @@
+                     onClicked: {
+                         TaskbarMenu.hide()
+                         Launcher.launchDetached("Win8Start")
+-                        WindowController.hide()
+                     }
+                 }
+             }

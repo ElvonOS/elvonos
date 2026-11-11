@@ -1,0 +1,18 @@
+#!/bin/bash
+# Install staged ElvonOS updates during shutdown/reboot.
+set -u
+
+CONF=${ELVONOS_UPDATE_CONF:-/etc/elvonos/update.conf}
+[ -f "$CONF" ] && . "$CONF"
+
+[ "${AUTO_APPLY:-shutdown}" = "shutdown" ] || exit 0
+[ -f /var/lib/elvonos/update/staged.json ] || exit 0
+
+log() { command -v logger >/dev/null 2>&1 && logger -t elvonos-update "$*" || true; }
+log "installing staged updates before shutdown"
+
+if timeout 150 /usr/bin/elvonos-update apply --staged; then
+    log "staged updates installed"
+else
+    log "staged update failed or timed out (will retry on next boot/check)"
+fi

@@ -1,0 +1,12 @@
+// ElvonOS live session: allow the desktop user to mount and unmount
+// local block devices without a running polkit authentication agent.
+polkit.addRule(function (action, subject) {
+    if (subject.user !== "elvon")
+        return null;
+    if (action.id.indexOf("org.freedesktop.udisks2.filesystem-") === 0)
+        return polkit.Result.YES;
+    if (action.id === "org.freedesktop.udisks2.eject-media"
+        || action.id === "org.freedesktop.udisks2.power-off-drive")
+        return polkit.Result.YES;
+    return null;
+});

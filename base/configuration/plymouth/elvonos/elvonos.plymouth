@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=ElvonOS
+Description=ElvonOS boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/elvonos
+ScriptFile=/usr/share/plymouth/themes/elvonos/elvonos.script

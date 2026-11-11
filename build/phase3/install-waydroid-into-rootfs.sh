@@ -20,14 +20,21 @@ echo "==> Installing desktop, sway, and waydroid runtime dependencies..."
 sudo chroot "$ROOTFS" apt-get update
 sudo chroot "$ROOTFS" apt-get install -y --no-install-recommends \
     ca-certificates \
-    sway swaybg waybar xwayland wl-clipboard \
+    labwc swaybg waybar wlr-randr xwayland wl-clipboard sudo \
     python3 python3-gi gir1.2-gtk-3.0 python3-dbus \
     lxc lxcfs iptables nftables polkitd \
+    grim \
     fonts-noto fonts-noto-color-emoji
 
 # 3. Install custom packages inside chroot
 echo "==> Installing Waydroid and GBinder packages..."
 sudo chroot "$ROOTFS" bash -c "dpkg -i /tmp/elvonos-pkgs/*.deb || apt-get install -y -f --no-install-recommends"
+
+# The repackaged .deb loses the executable bit on the Python entrypoint that
+# /usr/bin/waydroid points to (systemd otherwise fails with 203/EXEC), and on
+# the network setup script (session start fails with PermissionError).
+sudo chmod 755 "$ROOTFS/usr/lib/waydroid/waydroid.py"
+sudo chmod 755 "$ROOTFS/usr/lib/waydroid/data/scripts/waydroid-net.sh"
 
 # Clean up temporary packages
 sudo rm -rf "$ROOTFS/tmp/elvonos-pkgs"

@@ -1,0 +1,14 @@
+diff --git a/Win8Start/main.qml b/Win8Start/main.qml
+index 5237c8e..55fad8e 100644
+--- a/Win8Start/main.qml
++++ b/Win8Start/main.qml
+@@ -1155,8 +1155,7 @@ ApplicationWindow {
+                             // 2) Tile is not launching
+                             // 3) Live tile is enabled
+                             // 4) QML path exists
+-                            active: WindowController.visible
+-                            && !tile.launching
++                            active: !tile.launching
+                             && qmlEnabled
+                             && tileQml
+                             && tileQml.length > 0

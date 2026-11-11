@@ -1,0 +1,163 @@
+#!/bin/sh
+# ElvonOS V1 — Labwc autostart
+# Starts the Win8DE shell and the ElvonOS session services.
+
+# Session environment defaults (greetd/PAM usually provides these)
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland}"
+export GDK_BACKEND="${GDK_BACKEND:-wayland}"
+export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-ElvonOS:labwc}"
+export XDG_SESSION_TYPE="wayland"
+
+# Comfortable resolution in QEMU/VMs (ignored on real hardware).
+# This must run synchronously *before* the Win8DE shell starts: Win8Start
+# creates its layer surface at the output size present at process startup,
+# so a later mode change leaves the shell clipped.
+if command -v wlr-randr >/dev/null 2>&1; then
+    case "$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null)" in
+        *QEMU*|*KVM*|*VirtualBox*|*VMware*)
+            OUT=$(wlr-randr 2>/dev/null | head -n1 | cut -d" " -f1)
+            if [ -n "$OUT" ] && wlr-randr 2>/dev/null | grep current | grep -q "640x480 px"; then
+                for _ in 1 2 3 4 5 6 7 8 9 10; do
+                    wlr-randr --output "$OUT" --mode 1280x768 >/dev/null 2>&1
+                    wlr-randr 2>/dev/null | grep current | grep -q "1280x768 px" && break
+                    sleep 1
+                done
+                if ! wlr-randr 2>/dev/null | grep current | grep -q "1280x768 px"; then
+                    wlr-randr --output "$OUT" --mode 1024x768 >/dev/null 2>&1 || true
+                fi
+            fi
+            ;;
+    esac
+fi
+
+# Detect PC / laptop / tablet / TV and write the adaptive UI profile
+if command -v elvonos-formfactor >/dev/null 2>&1; then
+    elvonos-formfactor >/tmp/elvonos-formfactor.log 2>&1 || true
+fi
+
+# Boot splash bridge: keeps the ElvonOS boot artwork on screen while labwc
+# starts the Win8DE shell, then fades out. The software renderer is important:
+# on virtualised GPUs Qt Quick's OpenGL backend needs seconds for its first
+# frame. The marker below is an optional fast path; the splash also detects
+# the running shell processes on its own.
+ELVONOS_READY_FILE="/tmp/elvonos-desktop-ready"
+rm -f "$ELVONOS_READY_FILE" 2>/dev/null || true
+export QT_QUICK_BACKEND=software
+if command -v elvonos-splash >/dev/null 2>&1; then
+    elvonos-splash --plain \
+        --wait-file "$ELVONOS_READY_FILE" \
+        --min-ms 4000 --grace-ms 3000 --max-ms 20000 \
+        >/tmp/elvonos-splash.log 2>&1 &
+fi
+
+# Default Metro tile layout (generated once, before Win8Start reads it)
+if [ -x /usr/bin/elvonos-win8start-defaults ]; then
+    /usr/bin/elvonos-win8start-defaults >/tmp/win8start-defaults.log 2>&1 || true
+fi
+
+# Fallback wallpaper behind Win8Wall
+if command -v swaybg >/dev/null 2>&1; then
+    swaybg -i /usr/share/backgrounds/elvonos/wallpaper.png -m fill >/tmp/swaybg.log 2>&1 &
+fi
+
+# --- Win8DE shell ---------------------------------------------------------
+# Wallpaper first, start menu last (top-most layer surface).
+if command -v Win8Wall >/dev/null 2>&1; then
+    Win8Wall >/tmp/win8wall.log 2>&1 &
+fi
+
+# Desktop icons + bottom dock (separate layer surfaces)
+if command -v elvonos-desktop-extras >/dev/null 2>&1; then
+    elvonos-desktop-extras >/tmp/elvonos-desktop-extras.log 2>&1 &
+fi
+
+# Waydroid shared storage for the Explorer (non-blocking, user bindfs mount)
+if command -v elvonos-waydroid-storage >/dev/null 2>&1; then
+    elvonos-waydroid-storage >/tmp/elvonos-waydroid-storage.log 2>&1 &
+fi
+
+# Optional Waydroid warm start (disabled by default, see
+# `elvonos-waydroid autostart on`).  Runs in the background and exits
+# immediately when autostart is off.
+if command -v elvonos-waydroid >/dev/null 2>&1; then
+    elvonos-waydroid autostart-run >/tmp/elvonos-waydroid-autostart.log 2>&1 &
+fi
+
+# Window list must exist before the taskbar reads windows.ini
+if command -v list-windows >/dev/null 2>&1; then
+    list-windows >/tmp/list-windows.log 2>&1 &
+fi
+
+# Taskbar / running-apps switcher
+if command -v Win8Running >/dev/null 2>&1; then
+    Win8Running >/tmp/win8running.log 2>&1 &
+fi
+
+# Hot corners
+if command -v Win8Corner >/dev/null 2>&1; then
+    Win8Corner >/tmp/win8corner.log 2>&1 &
+fi
+
+# Start menu (hidden until Super / hot corner)
+if command -v Win8Start >/dev/null 2>&1; then
+    # A crashed previous session may have left a stale single-instance lock.
+    rm -f "$HOME/.config/Win8Start.lock" 2>/dev/null || true
+    Win8Start >/tmp/win8start.log 2>&1 &
+fi
+
+if command -v Win8OSD-server >/dev/null 2>&1; then
+    Win8OSD-server >/tmp/win8osd-server.log 2>&1 &
+fi
+
+if command -v battery-daemon >/dev/null 2>&1; then
+    battery-daemon >/tmp/battery-daemon.log 2>&1 &
+fi
+
+# Faster startup for GTK/portal apps
+dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY >/dev/null 2>&1 &
+
+# Desktop notifications (delay until the session bus is ready)
+if command -v fnott >/dev/null 2>&1; then
+    ( sleep 2; fnott >/tmp/fnott.log 2>&1 ) &
+fi
+
+# Idle / lock behaviour (config is managed by Settings → Power)
+if command -v swayidle >/dev/null 2>&1; then
+    SWAYIDLE_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/swayidle/config"
+    if [ -f "$SWAYIDLE_CONFIG" ]; then
+        ( sleep 2; swayidle -w -C "$SWAYIDLE_CONFIG" >/tmp/swayidle.log 2>&1 ) &
+    else
+        ( sleep 2; swayidle -w \
+            timeout 300 'elvonos-waydroid-lock' \
+            timeout 600 'elvonos-dpms off' resume 'elvonos-dpms on' \
+            before-sleep 'elvonos-waydroid-lock' >/tmp/swayidle.log 2>&1 ) &
+    fi
+fi
+
+# Optional desktop services
+if command -v kdeconnect-indicator >/dev/null 2>&1; then
+    kdeconnect-indicator >/dev/null 2>&1 &
+fi
+if command -v wlsunset >/dev/null 2>&1; then
+    wlsunset -t 4000 -T 6500 >/dev/null 2>&1 &
+fi
+if command -v lxqt-policykit-agent >/dev/null 2>&1; then
+    lxqt-policykit-agent >/dev/null 2>&1 &
+fi
+
+# ElvonOS services
+# Waydroid apps are installed by the elvonos-waydroid launcher once the
+# Android session has booted.
+if [ -f /usr/share/elvonos/elvonos-healthd.py ]; then
+    /usr/bin/python3 /usr/share/elvonos/elvonos-healthd.py >/tmp/elvonos-healthd.log 2>&1 &
+fi
+
+# The shell processes are running now; let the boot splash fade out.
+touch "$ELVONOS_READY_FILE" 2>/dev/null || true
+
+# System sound: played in the background once the session is up.
+if command -v elvonos-sound >/dev/null 2>&1; then
+    ( sleep 1; elvonos-sound play startup >/dev/null 2>&1 ) &
+fi

@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=ElvonOS
-Comment=ElvonOS Android-First Desktop Session
+Comment=ElvonOS Android-First Desktop Session (Labwc)
 Exec=/usr/bin/elvonos-session
 Type=Application
-DesktopNames=ElvonOS:Hyprland
+DesktopNames=ElvonOS:labwc

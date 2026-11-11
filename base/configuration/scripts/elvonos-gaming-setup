@@ -1,0 +1,186 @@
+#!/bin/bash
+# ElvonOS gaming / VR helper. Called by the Settings app.
+set -u
+
+export DEBIAN_FRONTEND=noninteractive
+
+status_json() {
+    local wine=""
+    local monado=""
+    local wayvr=""
+    local handler=""
+    if command -v wine >/dev/null 2>&1; then
+        wine=$(wine --version 2>/dev/null | head -n1)
+    fi
+    if command -v monado-service >/dev/null 2>&1; then
+        monado="installed"
+    elif flatpak list --app --columns=application 2>/dev/null | grep -qi monado; then
+        monado="flatpak"
+    fi
+    wayvr=$(flatpak list --app --columns=application 2>/dev/null | grep -i wayvr | head -n1)
+    if [ -z "$wayvr" ]; then
+        if command -v wayvr >/dev/null 2>&1; then
+            wayvr="installed"
+        elif [ -x /opt/wayvr/WayVR.AppImage ]; then
+            wayvr="appimage"
+        fi
+    fi
+    handler=$(xdg-mime query default application/x-ms-dos-executable 2>/dev/null)
+    local steam="" lutris="" mangohud="" gamemode="" winetricks=""
+    if command -v steam >/dev/null 2>&1; then steam="installed"
+    elif flatpak list --app --columns=application 2>/dev/null | grep -qi com.valvesoftware.Steam; then steam="flatpak"; fi
+    if command -v lutris >/dev/null 2>&1; then lutris="installed"
+    elif flatpak list --app --columns=application 2>/dev/null | grep -qi lutris; then lutris="flatpak"; fi
+    command -v mangohud >/dev/null 2>&1 && mangohud="installed"
+    command -v gamemoderun >/dev/null 2>&1 && gamemode="installed"
+    command -v winetricks >/dev/null 2>&1 && winetricks="installed"
+    printf '{"wine":"%s","monado":"%s","wayvr":"%s","handler":"%s","steam":"%s","lutris":"%s","mangohud":"%s","gamemode":"%s","winetricks":"%s"}\n' \
+        "${wine//\"/}" "${monado//\"/}" "${wayvr//\"/}" "${handler//\"/}" \
+        "${steam//\"/}" "${lutris//\"/}" "${mangohud//\"/}" "${gamemode//\"/}" "${winetricks//\"/}"
+}
+
+install_wine() {
+    apt-get update
+    apt-get install -y wget gnupg ca-certificates
+    mkdir -pm755 /etc/apt/keyrings
+    if wget -q -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key; then
+        local codename
+        codename=$(. /etc/os-release 2>/dev/null && echo "${VERSION_CODENAME:-trixie}")
+        wget -q -NP /etc/apt/sources.list.d \
+            "https://dl.winehq.org/wine-builds/debian/dists/${codename}/winehq-${codename}.sources" || true
+        apt-get update || true
+        apt-get install -y --install-recommends winehq-stable && return 0
+        echo "WineHQ repository failed, falling back to the Debian packages."
+    fi
+    apt-get install -y wine wine64 winetricks
+}
+
+install_monado() {
+    apt-get update
+    if apt-get install -y monado; then
+        return 0
+    fi
+    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
+    flatpak install -y flathub org.freedesktop.Monado
+}
+
+install_wayvr() {
+    apt-get install -y curl ca-certificates
+    # WayVR is distributed on GitHub (AppImage), not on Flathub.
+    local api="https://api.github.com/repos/wayvr-org/wayvr/releases/latest"
+    local url
+    url=$(curl -fsSL "$api" \
+        | grep -o '"browser_download_url": *"[^"]*"' \
+        | cut -d'"' -f4 \
+        | grep -Ei 'x86_64.*\.AppImage$' \
+        | head -n1)
+    if [ -z "$url" ]; then
+        echo "WayVR: no x86_64 AppImage found in the latest GitHub release."
+        return 1
+    fi
+    mkdir -p /opt/wayvr
+    local target=/opt/wayvr/WayVR.AppImage
+    echo "Downloading $url"
+    if ! curl -fL "$url" -o "$target"; then
+        echo "WayVR: download failed."
+        return 1
+    fi
+    chmod +x "$target"
+    ln -sf "$target" /usr/local/bin/wayvr
+    if ! "$target" --appimage-version >/dev/null 2>&1; then
+        echo "WayVR: AppImage cannot run directly (FUSE missing), extracting."
+        (cd /opt/wayvr && "$target" --appimage-extract >/dev/null 2>&1 || true)
+        if [ -x /opt/wayvr/squashfs-root/AppRun ]; then
+            ln -sf /opt/wayvr/squashfs-root/AppRun /usr/local/bin/wayvr
+        else
+            echo "WayVR: extraction failed."
+            return 1
+        fi
+    fi
+    echo "WayVR installed from GitHub ($url)."
+}
+
+install_steam() {
+    if apt-get install -y steam; then
+        return 0
+    fi
+    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
+    flatpak install -y flathub com.valvesoftware.Steam
+}
+
+install_lutris() {
+    if apt-get install -y lutris; then
+        return 0
+    fi
+    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
+    flatpak install -y flathub net.lutris.Lutris
+}
+
+install_gaming_tools() {
+    apt-get install -y mangohud gamemode winetricks
+}
+
+wine_handler_on() {
+    mkdir -p "$HOME/.local/share/applications"
+    cat > "$HOME/.local/share/applications/elvonos-wine.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Wine Windows Program Loader
+Comment=Run Windows applications with Wine
+Exec=wine %f
+Icon=wine
+Terminal=false
+NoDisplay=true
+MimeType=application/x-ms-dos-executable;application/x-msdownload;application/x-msi;
+Categories=Utility;
+EOF
+    update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+    xdg-mime default elvonos-wine.desktop \
+        application/x-ms-dos-executable application/x-msdownload application/x-msi
+    echo "Wine is now the default handler for .exe/.msi files."
+}
+
+wine_handler_off() {
+    rm -f "$HOME/.local/share/applications/elvonos-wine.desktop"
+    update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+    python3 - "$HOME/.config/mimeapps.list" <<'PY'
+import configparser
+import os
+import sys
+
+path = sys.argv[1]
+mimes = {
+    "application/x-ms-dos-executable",
+    "application/x-msdownload",
+    "application/x-msi",
+}
+if not os.path.exists(path):
+    sys.exit(0)
+parser = configparser.ConfigParser()
+parser.optionxform = str
+parser.read(path)
+for section in ("Default Applications", "Added Associations"):
+    if not parser.has_section(section):
+        continue
+    for mime in mimes:
+        if parser.has_option(section, mime):
+            parser.remove_option(section, mime)
+with open(path, "w") as handle:
+    parser.write(handle, space_around_delimiters=False)
+PY
+    echo "Wine is no longer the default .exe handler."
+}
+
+case "${1:-status}" in
+    status) status_json ;;
+    install-wine) install_wine ;;
+    install-monado) install_monado ;;
+    install-wayvr) install_wayvr ;;
+    install-steam) install_steam ;;
+    install-lutris) install_lutris ;;
+    install-tools) install_gaming_tools ;;
+    wine-handler-on) wine_handler_on ;;
+    wine-handler-off) wine_handler_off ;;
+    winecfg) exec winecfg ;;
+    *) echo "Unknown action: ${1:-}" >&2; exit 2 ;;
+esac

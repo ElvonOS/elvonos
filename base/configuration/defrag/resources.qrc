@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file>Defrag.qml</file>
+    </qresource>
+</RCC>

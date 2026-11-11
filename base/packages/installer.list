@@ -11,6 +11,7 @@ live-config
 live-config-systemd
 
 grub-efi-amd64-bin
+grub-pc-bin
 grub-efi-amd64-signed
 shim-signed
 mtools
@@ -23,6 +24,9 @@ btrfs-progs
 rsync
 os-prober
 efibootmgr
+curl
+minisign
+jq
 
 user-setup
 sudo

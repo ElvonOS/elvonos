@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=System
+Comment=System controls
+Exec=/usr/bin/elvonos-menu
+Icon=system
+Type=Application
+Categories=System;

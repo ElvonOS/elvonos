@@ -1,0 +1,8 @@
+#!/bin/sh
+# ElvonOS — turn all Wayland outputs on or off (used by swayidle).
+set -u
+mode="${1:-on}"
+outputs=$(wlr-randr 2>/dev/null | sed -n 's/^\([^ ]*\) .*/\1/p')
+for output in $outputs; do
+    wlopm "--$mode" "$output" >/dev/null 2>&1 || true
+done

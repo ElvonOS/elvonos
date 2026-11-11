@@ -1,0 +1,255 @@
+#!/bin/bash
+# ElvonOS performance and protection helper.
+# Root actions are invoked through passwordless sudo by the Control Center.
+set -u
+
+STATE_DIR="/var/lib/elvonos"
+STATE_FILE="$STATE_DIR/tune.state"
+mkdir -p "$STATE_DIR"
+
+PROFILE=balanced
+ZRAM=1
+FIREWALL=1
+WAYDROID_LIMIT=0
+if [ -f "$STATE_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+fi
+
+save_state() {
+    {
+        echo "PROFILE=$PROFILE"
+        echo "ZRAM=$ZRAM"
+        echo "FIREWALL=$FIREWALL"
+        echo "WAYDROID_LIMIT=$WAYDROID_LIMIT"
+    } > "$STATE_FILE"
+}
+
+cpu_governor() {
+    cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo "N/A"
+}
+
+cpu_governors_json() {
+    local list
+    list=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors 2>/dev/null)
+    if [ -z "$list" ]; then
+        echo "[]"
+        return
+    fi
+    local out=""
+    for g in $list; do
+        out="${out}\"${g}\","
+    done
+    echo "[${out%,}]"
+}
+
+set_governor() {
+    local gov="$1"
+    local applied=0
+    for path in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+        [ -w "$path" ] || continue
+        echo "$gov" > "$path" 2>/dev/null && applied=1
+    done
+    return $((1 - applied))
+}
+
+set_epp() {
+    local value="$1"
+    for path in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do
+        [ -w "$path" ] || continue
+        echo "$value" > "$path" 2>/dev/null || true
+    done
+}
+
+apply_sysctls() {
+    sysctl -w vm.swappiness="${1:-100}" >/dev/null 2>&1 || true
+    sysctl -w vm.vfs_cache_pressure=50 >/dev/null 2>&1 || true
+    sysctl -w vm.dirty_background_ratio="${2:-10}" >/dev/null 2>&1 || true
+    sysctl -w vm.dirty_ratio="${3:-20}" >/dev/null 2>&1 || true
+}
+
+apply_profile() {
+    case "$1" in
+        performance)
+            set_governor performance || set_governor schedutil || true
+            set_epp performance
+            apply_sysctls 100 5 10
+            ;;
+        powersave)
+            set_governor powersave || set_governor schedutil || true
+            set_epp power
+            apply_sysctls 100 20 40
+            ;;
+        *)
+            PROFILE=balanced
+            set_governor schedutil || set_governor ondemand || true
+            set_epp balance_performance
+            apply_sysctls 100 10 20
+            ;;
+    esac
+}
+
+zram_on() {
+    if grep -q "zram0" /proc/swaps 2>/dev/null; then
+        ZRAM=1
+        return 0
+    fi
+    modprobe zram num_devices=1 >/dev/null 2>&1 || true
+    for _ in 1 2 3 4 5; do
+        [ -b /dev/zram0 ] && break
+        sleep 1
+    done
+    if [ ! -b /dev/zram0 ]; then
+        echo "zram device could not be created."
+        return 1
+    fi
+    echo zstd > /sys/block/zram0/comp_algorithm 2>/dev/null \
+        || echo lz4hc > /sys/block/zram0/comp_algorithm 2>/dev/null \
+        || echo lzo > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+    local mem_kb size_bytes
+    mem_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+    size_bytes=$((mem_kb * 1024 / 2))
+    echo "$size_bytes" > /sys/block/zram0/disksize 2>/dev/null || return 1
+    mkswap /dev/zram0 >/dev/null 2>&1 || return 1
+    swapon /dev/zram0 >/dev/null 2>&1 || return 1
+    ZRAM=1
+    return 0
+}
+
+zram_off() {
+    if grep -q "zram0" /proc/swaps 2>/dev/null; then
+        swapoff /dev/zram0 >/dev/null 2>&1 || return 1
+    fi
+    [ -e /sys/block/zram0/reset ] && echo 1 > /sys/block/zram0/reset 2>/dev/null || true
+    ZRAM=0
+    return 0
+}
+
+firewall_on() {
+    nft delete table inet elvonos >/dev/null 2>&1 || true
+    nft add table inet elvonos || return 1
+    nft add chain inet elvonos input '{ type filter hook input priority 0; policy drop; }' || return 1
+    nft add rule inet elvonos input iif lo accept || return 1
+    nft add rule inet elvonos input ct state established,related accept || return 1
+    nft add rule inet elvonos input ip protocol icmp accept || return 1
+    nft add rule inet elvonos input ip6 nexthdr icmpv6 accept || return 1
+    nft add rule inet elvonos input udp sport 67 udp dport 68 accept || return 1
+    nft add rule inet elvonos input tcp dport 22 accept || return 1
+    nft add chain inet elvonos output '{ type filter hook output priority 0; policy accept; }' || return 1
+    FIREWALL=1
+    return 0
+}
+
+firewall_off() {
+    nft delete table inet elvonos >/dev/null 2>&1 || true
+    FIREWALL=0
+    return 0
+}
+
+firewall_active() {
+    nft list table inet elvonos >/dev/null 2>&1
+}
+
+waydroid_cgroup() {
+    find /sys/fs/cgroup -maxdepth 4 -type d -name 'lxc.payload.waydroid' 2>/dev/null | head -n 1
+}
+
+waydroid_limit_on() {
+    local cg
+    cg=$(waydroid_cgroup)
+    if [ -z "$cg" ]; then
+        echo "Waydroid is not running."
+        return 1
+    fi
+    local mem_kb limit
+    mem_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+    limit=$((mem_kb * 1024 * 3 / 4))
+    echo "$limit" > "$cg/memory.high" 2>/dev/null || return 1
+    echo 200 > "$cg/cpu.weight" 2>/dev/null || true
+    WAYDROID_LIMIT=1
+    return 0
+}
+
+waydroid_limit_off() {
+    local cg
+    cg=$(waydroid_cgroup)
+    if [ -z "$cg" ]; then
+        WAYDROID_LIMIT=0
+        return 0
+    fi
+    echo max > "$cg/memory.high" 2>/dev/null || true
+    echo 100 > "$cg/cpu.weight" 2>/dev/null || true
+    WAYDROID_LIMIT=0
+    return 0
+}
+
+status() {
+    local gov govs zram_size swappiness mem_total mem_avail swap_total swap_free load cpu_count
+    gov=$(cpu_governor)
+    govs=$(cpu_governors_json)
+    zram_size=$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0)
+    swappiness=$(cat /proc/sys/vm/swappiness 2>/dev/null || echo 0)
+    mem_total=$(awk '/MemTotal/ {print $2*1024}' /proc/meminfo)
+    mem_avail=$(awk '/MemAvailable/ {print $2*1024}' /proc/meminfo)
+    swap_total=$(awk '/SwapTotal/ {print $2*1024}' /proc/meminfo)
+    swap_free=$(awk '/SwapFree/ {print $2*1024}' /proc/meminfo)
+    load=$(awk '{print $1" "$2" "$3}' /proc/loadavg)
+    cpu_count=$(nproc 2>/dev/null || echo 1)
+    local zram_active=false
+    grep -q "zram0" /proc/swaps 2>/dev/null && zram_active=true
+    local fw_active=false
+    firewall_active && fw_active=true
+    local wd_running=false
+    [ -n "$(waydroid_cgroup)" ] && wd_running=true
+    local wd_limit=false
+    [ "$WAYDROID_LIMIT" = "1" ] && wd_limit=true
+
+    printf '{"governor":"%s","governors":%s,"profile":"%s","zram":%s,"zramSize":%s,"swappiness":%s,"firewall":%s,"waydroidRunning":%s,"waydroidLimit":%s,"memTotal":%s,"memAvailable":%s,"swapTotal":%s,"swapFree":%s,"load":"%s","cpuCount":%s}\n' \
+        "$gov" "$govs" "$PROFILE" "$zram_active" "$zram_size" "$swappiness" \
+        "$fw_active" "$wd_running" "$wd_limit" "$mem_total" "$mem_avail" \
+        "$swap_total" "$swap_free" "$load" "$cpu_count"
+}
+
+case "${1:-status}" in
+    status)
+        status
+        ;;
+    profile)
+        PROFILE="${2:-balanced}"
+        apply_profile "$PROFILE"
+        save_state
+        echo "Profile set to $PROFILE."
+        ;;
+    zram)
+        if [ "${2:-on}" = "off" ]; then
+            zram_off && save_state && echo "ZRAM swap disabled."
+        else
+            zram_on && save_state && echo "ZRAM swap enabled."
+        fi
+        ;;
+    firewall)
+        if [ "${2:-on}" = "off" ]; then
+            firewall_off && save_state && echo "Firewall disabled."
+        else
+            firewall_on && save_state && echo "Firewall enabled (inbound blocked, SSH allowed)."
+        fi
+        ;;
+    waydroid-limit)
+        if [ "${2:-on}" = "off" ]; then
+            waydroid_limit_off && save_state && echo "Waydroid limit removed."
+        else
+            waydroid_limit_on && save_state && echo "Waydroid limited to 75% RAM."
+        fi
+        ;;
+    boot)
+        [ "${ZRAM:-1}" = "1" ] && zram_on || true
+        [ "${FIREWALL:-1}" = "1" ] && firewall_on || true
+        apply_profile "$PROFILE"
+        [ "${WAYDROID_LIMIT:-0}" = "1" ] && waydroid_limit_on >/dev/null 2>&1 || true
+        save_state
+        ;;
+    *)
+        echo "Usage: elvonos-tune {status|profile balanced|performance|powersave|zram on|off|firewall on|off|waydroid-limit on|off|boot}" >&2
+        exit 2
+        ;;
+esac

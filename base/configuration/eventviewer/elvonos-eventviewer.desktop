@@ -1,0 +1,24 @@
+[Desktop Entry]
+Type=Application
+Name=Event Viewer
+Name[de]=Ereignisanzeige
+Name[fr]=Observateur d'événements
+Name[es]=Visor de eventos
+Name[it]=Visualizzatore eventi
+Name[pt]=Visualizador de Eventos
+Name[nl]=Gebeurtenisviewer
+Name[pl]=Przeglądarka zdarzeń
+Name[ru]=Просмотр событий
+Name[tr]=Olay Görüntüleyici
+Name[uk]=Перегляд подій
+Name[cs]=Prohlížeč událostí
+Name[zh_CN]=事件查看器
+Name[ja]=イベントビューア
+GenericName=System Log Viewer
+Comment=Inspect system, kernel and application events from the journal
+Exec=elvonos-eventviewer
+Icon=utilities-log-viewer
+Terminal=false
+StartupNotify=true
+Categories=System;Utility;Monitor;
+Keywords=event;log;journal;systemd;kernel;error;warning;

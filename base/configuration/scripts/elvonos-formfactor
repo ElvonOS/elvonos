@@ -1,0 +1,95 @@
+#!/bin/sh
+# ElvonOS — detect the device class and write an adaptive UI profile.
+set -u
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/elvonos"
+CONFIG="$CONFIG_DIR/formfactor.json"
+mkdir -p "$CONFIG_DIR"
+
+manual="auto"
+if [ -f "$CONFIG" ]; then
+    manual=$(sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p' "$CONFIG" | head -n1)
+    [ -n "$manual" ] || manual="auto"
+fi
+
+chassis=$(cat /sys/class/dmi/id/chassis_type 2>/dev/null || echo 0)
+battery="no"
+for bat in /sys/class/power_supply/BAT*; do
+    [ -d "$bat" ] && battery="yes"
+done
+
+touch="no"
+if grep -qiE 'touchscreen|touch screen|touch digitizer' /proc/bus/input/devices 2>/dev/null; then
+    touch="yes"
+fi
+
+width=0
+height=0
+diagonal=0
+if command -v wlr-randr >/dev/null 2>&1; then
+    output=$(wlr-randr 2>/dev/null)
+    current_line=$(printf '%s\n' "$output" | grep -m1 'current')
+    res=$(printf '%s\n' "$current_line" | grep -oE '[0-9]+x[0-9]+' | head -n1)
+    [ -n "$res" ] || res=$(printf '%s\n' "$output" | grep -oE '[0-9]+x[0-9]+' | head -n1)
+    width=${res%x*}
+    height=${res#*x}
+    phys=$(printf '%s\n' "$output" | sed -n 's/.*Physical size: \([0-9][0-9]*\)x\([0-9][0-9]*\) mm.*/\1 \2/p' | head -n1)
+    if [ -n "${phys:-}" ]; then
+        set -- $phys
+        if [ "$1" -gt 0 ] && [ "$2" -gt 0 ]; then
+            diagonal=$(LC_ALL=C awk -v a="$1" -v b="$2" 'BEGIN { printf "%.1f", sqrt(a*a+b*b)/25.4 }')
+        fi
+    fi
+fi
+
+detected="pc"
+if [ "$manual" = "pc" ] || [ "$manual" = "laptop" ] || [ "$manual" = "tablet" ] || [ "$manual" = "tv" ]; then
+    type="$manual"
+elif [ "$battery" = "no" ] && { [ "${diagonal%.*}" -ge 30 ] 2>/dev/null || { [ "$width" -ge 1920 ] && [ "${diagonal%.*}" -ge 24 ]; }; }; then
+    type="tv"
+elif [ "$touch" = "yes" ] && { [ "$battery" = "yes" ] || [ "$chassis" = "30" ] || [ "$chassis" = "31" ] || [ "$chassis" = "32" ]; }; then
+    type="tablet"
+elif [ "$battery" = "yes" ] || [ "$chassis" = "8" ] || [ "$chassis" = "9" ] || [ "$chassis" = "10" ] || [ "$chassis" = "14" ]; then
+    type="laptop"
+else
+    type="pc"
+fi
+detected="$type"
+if [ "$manual" = "pc" ] || [ "$manual" = "laptop" ] || [ "$manual" = "tablet" ] || [ "$manual" = "tv" ]; then
+    mode="$manual"
+else
+    mode="auto"
+fi
+
+case "$type" in
+    laptop) scale="1.00"; taskbar=50; dock=78; icon=60; search=440; overscan=0 ;;
+    tablet) scale="1.15"; taskbar=62; dock=96; icon=76; search=540; overscan=0 ;;
+    tv)     scale="1.35"; taskbar=72; dock=112; icon=92; search=640; overscan=24 ;;
+    *)      scale="1.00"; taskbar=54; dock=86; icon=64; search=470; overscan=0 ;;
+esac
+[ "$manual" = "auto" ] || detected="$manual"
+
+touch_profile="$touch"
+[ "$type" = "tablet" ] && touch_profile="yes"
+
+cat > "$CONFIG" <<EOF
+{
+    "mode": "$mode",
+    "type": "$type",
+    "detected": "$detected",
+    "scale": $scale,
+    "touch": $([ "$touch_profile" = "yes" ] && echo true || echo false),
+    "taskbarHeight": $taskbar,
+    "dockHeight": $dock,
+    "iconSize": $icon,
+    "searchWidth": $search,
+    "overscan": $overscan,
+    "displayWidth": ${width:-0},
+    "displayHeight": ${height:-0},
+    "diagonalInch": ${diagonal:-0},
+    "battery": "$battery",
+    "touchscreen": "$touch",
+    "chassis": ${chassis:-0}
+}
+EOF
+echo "form factor: $type (mode $mode), scale $scale, ${width}x${height}, ${diagonal}in"

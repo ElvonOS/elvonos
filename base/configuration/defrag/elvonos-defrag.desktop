@@ -1,0 +1,23 @@
+[Desktop Entry]
+Type=Application
+Name=Defrag
+Name[de]=Defragmentieren
+Name[fr]=Défragmenter
+Name[es]=Desfragmentar
+Name[it]=Deframmentare
+Name[pt]=Desfragmentar
+Name[nl]=Defragmenteren
+Name[pl]=Defragmentuj
+Name[ru]=Дефрагментация
+Name[tr]=Birleştir
+Name[uk]=Дефрагментувати
+Name[zh_CN]=碎片整理
+Name[ja]=デフラグ
+GenericName=Disk Optimizer
+Comment=Analyze, defragment and TRIM mounted filesystems
+Exec=elvonos-defrag
+Icon=drive-harddisk
+Terminal=false
+StartupNotify=true
+Categories=System;Utility;Filesystem;
+Keywords=defrag;defragment;trim;disk;ssd;filesystem;

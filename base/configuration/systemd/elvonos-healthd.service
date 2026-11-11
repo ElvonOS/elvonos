@@ -1,0 +1,15 @@
+[Unit]
+Description=ElvonOS Health Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/share/elvonos/elvonos-healthd.py
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=120
+StartLimitBurst=5
+WatchdogSec=60
+
+[Install]
+WantedBy=multi-user.target

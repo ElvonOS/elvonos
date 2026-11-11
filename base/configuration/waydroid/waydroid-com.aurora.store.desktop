@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Aurora Store
+GenericName=Android App Store
+Comment=Android app store in Waydroid
+Exec=elvonos-waydroid com.aurora.store
+Icon=/usr/share/icons/elvonos/metro/aurora-store.png
+Terminal=false
+StartupNotify=false
+Categories=X-WayDroid-App;Utility;
+X-ElvonOS-Android=true

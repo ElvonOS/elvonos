@@ -1,0 +1,11 @@
+diff --git a/Win8Start/main.qml b/Win8Start/main.qml
+--- a/Win8Start/main.qml
++++ b/Win8Start/main.qml
+@@ -212,6 +212,7 @@
+                 height: start.height
+                 anchors.verticalCenter: start.verticalCenter
+                 anchors.right: userCard.left
++                anchors.rightMargin: 28
+                 
+                 // Battery fill
+                 Rectangle {

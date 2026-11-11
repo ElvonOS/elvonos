@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# ElvonOS V1 — ChromeOS-style app launcher for Labwc/Waybar
+# Search bar + app grid (drun mode) with icons.
+set -u
+
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+    for socket in "$XDG_RUNTIME_DIR"/wayland-*; do
+        if [[ -S "$socket" && "$socket" != *.lock ]]; then
+            export WAYLAND_DISPLAY="${socket##*/}"
+            break
+        fi
+    done
+fi
+
+export GDK_BACKEND="wayland"
+export QT_QPA_PLATFORM="wayland"
+
+MENU_CONF="/etc/wofi/elvonos-menu.conf"
+MENU_STYLE="/etc/wofi/elvonos-menu.css"
+
+# ChromeOS launcher: search bar + app grid via wofi drun
+DRUN_ARGS=(--show drun --prompt "  Suchen" --width 640 --height 480 --allow-images --insensitive --hide-scroll --cache-file /dev/null)
+if [[ -f "$MENU_CONF" ]]; then
+    DRUN_ARGS=(--conf "$MENU_CONF" "${DRUN_ARGS[@]}")
+fi
+if [[ -f "$MENU_STYLE" ]]; then
+    DRUN_ARGS=(--style "$MENU_STYLE" "${DRUN_ARGS[@]}")
+fi
+
+# Fallback system menu if drun is unavailable or user picks "System"
+exec wofi "${DRUN_ARGS[@]}"

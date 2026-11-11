@@ -1,0 +1,19 @@
+<RCC>
+    <qresource prefix="/">
+        <file>Settings.qml</file>
+        <file>i18n/de.json</file>
+        <file>i18n/fr.json</file>
+        <file>i18n/es.json</file>
+        <file>i18n/it.json</file>
+        <file>i18n/pt.json</file>
+        <file>i18n/nl.json</file>
+        <file>i18n/pl.json</file>
+        <file>i18n/ru.json</file>
+        <file>i18n/tr.json</file>
+        <file>i18n/uk.json</file>
+        <file>i18n/cs.json</file>
+        <file>i18n/sv.json</file>
+        <file>i18n/zh.json</file>
+        <file>i18n/ja.json</file>
+    </qresource>
+</RCC>

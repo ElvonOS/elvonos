@@ -1,0 +1,72 @@
+{
+    "layer": "top",
+    "position": "bottom",
+    "height": 48,
+    "spacing": 4,
+    "margin-bottom": 8,
+    "margin-left": 8,
+    "margin-right": 8,
+    "modules-left": ["custom/start", "custom/term", "custom/files", "custom/android"],
+    "modules-center": ["wlr/taskbar"],
+    "modules-right": ["custom/volume", "custom/battery", "custom/network", "clock"],
+
+    "custom/start": {
+        "format": "  \uf135  Start",
+        "tooltip": false,
+        "on-click": "/usr/bin/elvonos-menu-toggle"
+    },
+    "custom/term": {
+        "format": "  \uf120",
+        "tooltip": true,
+        "tooltip-format": "Terminal",
+        "on-click": "foot"
+    },
+    "custom/files": {
+        "format": "  \uf07b",
+        "tooltip": true,
+        "tooltip-format": "Dateien",
+        "on-click": "thunar"
+    },
+    "custom/android": {
+        "format": "  \uf17b",
+        "tooltip": true,
+        "tooltip-format": "Android (Waydroid)",
+        "on-click": "waydroid show-full-ui"
+    },
+    "wlr/taskbar": {
+        "format": "{icon}  {title}",
+        "icon-size": 16,
+        "tooltip-format": "{title}",
+        "on-click": "activate",
+        "on-click-middle": "close",
+        "active-first": true
+    },
+    "custom/volume": {
+        "format": "  \uf028  {volume}%",
+        "format-muted": "  \uf026  Aus",
+        "format-icons": {
+            "default": ["\uf027", "\uf027", "\uf028"]
+        },
+        "on-click": "pavucontrol",
+        "on-click-middle": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+    },
+    "custom/battery": {
+        "format": "  \uf240  {capacity}%",
+        "format-icons": ["\uf244", "\uf243", "\uf242", "\uf241", "\uf240"],
+        "on-click": "foot -e upower -i /org/freedesktop/UPower/devices/battery_BAT0"
+    },
+    "custom/network": {
+        "format-linked": "  \uf1eb  {essid}",
+        "format-disconnected": "  \uf127  Aus",
+        "format-icons": {
+            "ethernet": "\uf7f5",
+            "wifi": "\uf1eb"
+        },
+        "on-click": "nm-connection-editor"
+    },
+    "clock": {
+        "format": "{:%H:%M}",
+        "tooltip-format": "{:%A, %d. %B %Y}",
+        "timezone": "Europe/Berlin"
+    }
+}

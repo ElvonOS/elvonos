@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Store
+GenericName=App Store
+Comment=Linux apps from Flathub and Android apps through Aurora
+Exec=elvonos-store
+Icon=cs-software-properties
+Terminal=false
+StartupNotify=true
+Categories=System;PackageManager;Utility;
+Keywords=store;apps;flatpak;flathub;aurora;android;install;

@@ -1,0 +1,4 @@
+# ElvonOS power / idle defaults
+timeout 300 'Win8Lock'
+timeout 600 'elvonos-dpms off' resume 'elvonos-dpms on'
+before-sleep 'Win8Lock'

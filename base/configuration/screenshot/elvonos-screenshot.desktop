@@ -1,0 +1,24 @@
+[Desktop Entry]
+Type=Application
+Name=Screenshot
+Name[fr]=Capture d'écran
+Name[es]=Captura de pantalla
+Name[it]=Schermata
+Name[pt]=Captura de tela
+Name[nl]=Schermafbeelding
+Name[pl]=Zrzut ekranu
+Name[ru]=Скриншот
+Name[tr]=Ekran görüntüsü
+Name[uk]=Скріншот
+Name[cs]=Snímek obrazovky
+Name[sv]=Skärmdump
+Name[zh_CN]=截图
+Name[ja]=スクリーンショット
+GenericName=Screenshot Tool
+Comment=Capture the screen or a region, copy and preview screenshots
+Exec=elvonos-screenshot
+Icon=applets-screenshooter
+Terminal=false
+StartupNotify=true
+Categories=Utility;Graphics;
+Keywords=screenshot;capture;screen;region;shot;

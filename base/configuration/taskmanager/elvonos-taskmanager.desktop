@@ -1,0 +1,25 @@
+[Desktop Entry]
+Type=Application
+Name=Task Manager
+Name[de]=Aufgabenmanager
+Name[fr]=Gestionnaire de tâches
+Name[es]=Administrador de tareas
+Name[it]=Responsabile attività
+Name[pt]=Gerenciador de Tarefas
+Name[nl]=Taakbeheer
+Name[pl]=Menedżer zadań
+Name[ru]=Диспетчер задач
+Name[tr]=Görev Yöneticisi
+Name[uk]=Диспетчер завдань
+Name[cs]=Správce úloh
+Name[sv]=Aktivitetshanteraren
+Name[zh_CN]=任务管理器
+Name[ja]=タスクマネージャー
+GenericName=System Monitor
+Comment=Monitor and control Linux and Android processes
+Exec=elvonos-taskmanager
+Icon=utilities-system-monitor
+Terminal=false
+StartupNotify=true
+Categories=System;Monitor;Utility;
+Keywords=task;process;monitor;android;waydroid;

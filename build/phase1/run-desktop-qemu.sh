@@ -8,7 +8,7 @@ ISO="$REPO_ROOT/build/out/ElvonOS-1.0.0-amd64.iso"
 LOG_FILE="$REPO_ROOT/build/out/qemu_desktop.log"
 OVMF_BIOS="/usr/share/ovmf/OVMF.fd"
 
-MEMORY="${MEMORY:-4096}"
+MEMORY="${MEMORY:-8192}"
 SMP="${SMP:-4}"
 
 echo "=================================================="
@@ -25,6 +25,7 @@ if [[ ! -f "$ISO" ]]; then
 fi
 
 rm -f "$LOG_FILE"
+rm -f /tmp/qemu-monitor.sock /tmp/qemu-qmp.sock
 
 export DISPLAY="${DISPLAY:-:0}"
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
@@ -36,17 +37,22 @@ if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
     DISPLAY_OPT="-display none -vnc :0"
 fi
 
-qemu-system-x86_64 \
+exec qemu-system-x86_64 \
     -m "$MEMORY" \
     -smp "$SMP" \
-    -machine type=q35,accel=tcg \
+    -machine q35,accel=tcg \
     -bios "$OVMF_BIOS" \
-    -device virtio-vga \
+    -device virtio-gpu-pci \
     -device usb-ehci,id=ehci \
     -device usb-tablet \
     -cdrom "$ISO" \
     -boot d \
     $DISPLAY_OPT \
     -serial file:"$LOG_FILE" \
+    -serial tcp::4444,server,nowait \
     -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
+    -qmp unix:/tmp/qemu-qmp.sock,server,nowait \
+    -D "$REPO_ROOT/build/out/qemu-debug.log" \
+    -d guest_errors,unimp,cpu_reset,int \
+    -no-reboot \
     -net nic -net user,hostfwd=tcp::2222-:22

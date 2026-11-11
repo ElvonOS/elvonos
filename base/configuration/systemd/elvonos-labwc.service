@@ -1,0 +1,40 @@
+[Unit]
+Description=ElvonOS Labwc Compositor
+Documentation=https://labwc.github.io/
+After=systemd-logind.service systemd-user-sessions.service dbus.service
+Wants=systemd-logind.service dbus.service
+Before=graphical-session.target
+
+[Service]
+User=elvon
+Group=elvon
+Type=simple
+WorkingDirectory=/home/elvon
+Environment=HOME=/home/elvon
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WLR_BACKENDS=drm,libinput
+Environment=WLR_RENDERER=pixman
+Environment=WLR_NO_HARDWARE_CURSORS=1
+Environment=WLR_DRM_NO_ATOMIC=1
+Environment=WLR_DRM_NO_MODIFIERS=1
+Environment=WLR_RENDERER_ALLOW_SOFTWARE=1
+Environment=QT_QPA_PLATFORM=wayland
+Environment=GDK_BACKEND=wayland
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_SESSION_TYPE=wayland
+Environment=XDG_CURRENT_DESKTOP=ElvonOS
+Environment=XDG_SEAT=seat0
+ExecStartPre=/bin/mkdir -p /run/user/1000
+ExecStartPre=/bin/chown 1000:1000 /run/user/1000
+ExecStartPre=-/bin/chvt 1
+ExecStart=/usr/bin/elvonos-session
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+DeviceAllow=char-dri rwm
+DeviceAllow=char-input rwm
+
+[Install]
+WantedBy=multi-user.target

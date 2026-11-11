@@ -1,0 +1,465 @@
+#!/bin/bash
+# ElvonOS Live Installer
+#
+# Installs the running live system to a disk:
+#   GPT (BIOS + EFI) -> ext4 root -> copy system -> configure -> GRUB -> initramfs
+#
+# Interactive:  elvonos-installer
+# Unattended:   ELVONOS_INSTALLER_TARGET=/dev/vda ELVONOS_INSTALLER_YES=1 \
+#               ELVONOS_INSTALLER_USER=alice ELVONOS_INSTALLER_PASSWORD=secret \
+#               elvonos-installer
+set -euo pipefail
+
+TARGET="${ELVONOS_INSTALLER_TARGET:-}"
+ASSUME_YES="${ELVONOS_INSTALLER_YES:-0}"
+MOUNT=/target
+VERSION="$(sed -n 's/^VERSION=//p' /etc/elvonos-release 2>/dev/null || echo 1.0.0)"
+
+# Defaults (also used for unattended installs)
+LANG_CODE="${ELVONOS_INSTALLER_LANG:-en}"
+KEYMAP="${ELVONOS_INSTALLER_KEYMAP:-}"
+TIMEZONE="${ELVONOS_INSTALLER_TIMEZONE:-UTC}"
+USERNAME="${ELVONOS_INSTALLER_USER:-elvon}"
+USER_FULLNAME="${ELVONOS_INSTALLER_FULLNAME:-ElvonOS User}"
+USER_PASSWORD="${ELVONOS_INSTALLER_PASSWORD:-elvon}"
+HOSTNAME="${ELVONOS_INSTALLER_HOSTNAME:-elvonos}"
+EXTRAS="${ELVONOS_INSTALLER_EXTRAS:-}"   # comma separated: multimedia,dev,gaming,office,virt
+
+log() { echo "[installer] $*"; }
+die() { echo "[installer] ERROR: $*" >&2; exit 1; }
+
+if [ "$(id -u)" -ne 0 ]; then
+    if command -v pkexec >/dev/null 2>&1 && [ "${ELVONOS_INSTALLER_NO_PKEXEC:-0}" != "1" ]; then
+        exec pkexec env ELVONOS_INSTALLER_TARGET="$TARGET" \
+             ELVONOS_INSTALLER_YES="$ASSUME_YES" "$0" "$@"
+    fi
+    exec sudo -n "$0" "$@"
+fi
+
+has_gui() { [ "$ASSUME_YES" != "1" ] && command -v zenity >/dev/null 2>&1; }
+
+# --- Language -> locale/keyboard helpers ------------------------------------
+locale_for() {
+    case "$1" in
+        en) echo "en_US.UTF-8" ;;
+        de) echo "de_DE.UTF-8" ;;
+        es) echo "es_ES.UTF-8" ;;
+        fr) echo "fr_FR.UTF-8" ;;
+        it) echo "it_IT.UTF-8" ;;
+        pt) echo "pt_PT.UTF-8" ;;
+        nl) echo "nl_NL.UTF-8" ;;
+        pl) echo "pl_PL.UTF-8" ;;
+        ru) echo "ru_RU.UTF-8" ;;
+        tr) echo "tr_TR.UTF-8" ;;
+        uk) echo "uk_UA.UTF-8" ;;
+        cs) echo "cs_CZ.UTF-8" ;;
+        sv) echo "sv_SE.UTF-8" ;;
+        zh) echo "zh_CN.UTF-8" ;;
+        ja) echo "ja_JP.UTF-8" ;;
+        *)  echo "en_US.UTF-8" ;;
+    esac
+}
+default_keymap_for() {
+    case "$1" in
+        de) echo de ;; es) echo es ;; fr) echo fr ;; it) echo it ;;
+        pt) echo pt ;; nl) echo nl ;; pl) echo pl ;; ru) echo ru ;;
+        tr) echo tr ;; uk) echo ua ;; cs) echo cz ;; sv) echo se ;;
+        ja) echo jp ;; *) echo us ;;
+    esac
+}
+
+# --- Target disk ------------------------------------------------------------
+if [ -z "$TARGET" ]; then
+    # Only real disks; skip zram, loop and ram devices.
+    mapfile -t disks < <(lsblk -dpno NAME,SIZE,TYPE |
+        awk '$3=="disk" && $1 !~ /\/zram|\/loop|\/ram/')
+    [ "${#disks[@]}" -gt 0 ] || die "no disks found"
+    list=()
+    for entry in "${disks[@]}"; do
+        name=$(echo "$entry" | awk '{print $1}')
+        size=$(echo "$entry" | awk '{print $2}')
+        model=$(lsblk -dno MODEL "$name" 2>/dev/null | tr -s ' ' |
+            sed 's/^ //; s/ $//')
+        [ -n "$model" ] || model="-"
+        list+=("$name" "$size" "$model")
+    done
+    TARGET=$(zenity --list --title="Install ElvonOS $VERSION" \
+        --text="Select the target disk. All data on it will be erased." \
+        --column="Device" --column="Size" --column="Model" \
+        --width=760 --height=420 "${list[@]}" 2>/dev/null) || exit 0
+fi
+TARGET=$(readlink -f "$TARGET")
+[ -b "$TARGET" ] || die "not a block device: $TARGET"
+log "Target: $TARGET ($(lsblk -dpno SIZE "$TARGET"))"
+
+# --- Interactive configuration ----------------------------------------------
+if has_gui; then
+    lang=$(zenity --list --title="Language" \
+        --text="Choose the language for the installed system." \
+        --column="Language" --column="Code" --hide-column=2 --print-column=2 \
+        --width=520 --height=560 \
+        "English" "en" "Deutsch" "de" "Español" "es" "Français" "fr" \
+        "Italiano" "it" "Português" "pt" "Nederlands" "nl" "Polski" "pl" \
+        "Русский" "ru" "Türkçe" "tr" "Українська" "uk" "Čeština" "cs" \
+        "Svenska" "sv" "中文" "zh" "日本語" "ja" 2>/dev/null) || exit 0
+    [ -n "$lang" ] && LANG_CODE="$lang"
+
+    suggested_keymap=$(default_keymap_for "$LANG_CODE")
+    keymap=$(zenity --list --title="Keyboard layout" \
+        --text="Select the keyboard layout." \
+        --column="Layout" --column="Code" --hide-column=2 --print-column=2 \
+        --width=520 --height=520 \
+        "English (US)" "us" "English (UK)" "gb" "German" "de" "Spanish" "es" \
+        "French" "fr" "Italian" "it" "Portuguese" "pt" "Dutch" "nl" \
+        "Polish" "pl" "Russian" "ru" "Turkish" "tr" "Ukrainian" "ua" \
+        "Czech" "cz" "Swedish" "se" "Swiss German" "ch" "Japanese" "jp" \
+        "Brazilian Portuguese" "br" 2>/dev/null) || exit 0
+    [ -n "$keymap" ] && KEYMAP="$keymap"
+
+    tz=$(zenity --list --title="Time zone" \
+        --text="Select your time zone." \
+        --column="Time zone" --hide-header --width=420 --height=480 \
+        "UTC" "Europe/Berlin" "Europe/London" "Europe/Paris" \
+        "Europe/Madrid" "Europe/Rome" "Europe/Warsaw" "Europe/Kyiv" \
+        "Europe/Moscow" "Europe/Istanbul" "America/New_York" \
+        "America/Chicago" "America/Denver" "America/Los_Angeles" \
+        "America/Sao_Paulo" "Asia/Tokyo" "Asia/Shanghai" \
+        "Australia/Sydney" 2>/dev/null) || exit 0
+    [ -n "$tz" ] && TIMEZONE="$tz"
+
+    while :; do
+        user=$(zenity --entry --title="User account" \
+            --text="Username (lowercase letters, digits, '-' and '_'):" \
+            --entry-text="$USERNAME" 2>/dev/null) || exit 0
+        if [[ "$user" =~ ^[a-z_][a-z0-9_-]{2,31}$ ]] && \
+           [ "$user" != "root" ] && \
+           { [ "$user" = "elvon" ] || ! getent passwd "$user" >/dev/null; }; then
+            USERNAME="$user"
+            break
+        fi
+        zenity --error --text="Invalid username. Use 3-32 lowercase characters." \
+            --title="Invalid username" 2>/dev/null || true
+    done
+
+    full=$(zenity --entry --title="Full name" \
+        --text="Full name (optional):" --entry-text="$USER_FULLNAME" 2>/dev/null) || exit 0
+    [ -n "$full" ] && USER_FULLNAME="$full"
+
+    while :; do
+        p1=$(zenity --password --title="Password for $USERNAME" 2>/dev/null) || exit 0
+        p2=$(zenity --password --title="Confirm password" 2>/dev/null) || exit 0
+        if [ -n "$p1" ] && [ "$p1" = "$p2" ]; then
+            USER_PASSWORD="$p1"
+            break
+        fi
+        zenity --error --text="Passwords are empty or do not match." \
+            --title="Password" 2>/dev/null || true
+    done
+
+    while :; do
+        host=$(zenity --entry --title="Computer name" \
+            --text="Hostname:" --entry-text="$HOSTNAME" 2>/dev/null) || exit 0
+        if [[ "$host" =~ ^[a-z0-9][a-z0-9-]{1,62}$ ]]; then
+            HOSTNAME="$host"
+            break
+        fi
+        zenity --error --text="Invalid hostname." --title="Hostname" 2>/dev/null || true
+    done
+
+    extras=$(zenity --list --checklist --title="Additional software" \
+        --text="All hardware drivers and firmware are already included.\nSelect optional software to install on first boot (requires internet):" \
+        --column="Install" --column="Package set" --column="Code" \
+        --hide-column=3 --print-column=3 --separator=, \
+        --width=680 --height=420 \
+        FALSE "Multimedia codecs (FFmpeg, GStreamer)" multimedia \
+        FALSE "Development tools (gcc, git, cmake, gdb)" dev \
+        FALSE "Gaming (Wine, GameMode, MangoHud)" gaming \
+        FALSE "Office (LibreOffice)" office \
+        FALSE "Virtualization (QEMU, virt-manager)" virt 2>/dev/null) || exit 0
+    EXTRAS="$extras"
+fi
+[ -n "$KEYMAP" ] || KEYMAP=$(default_keymap_for "$LANG_CODE")
+LOCALE=$(locale_for "$LANG_CODE")
+
+# --- Summary / confirmation -------------------------------------------------
+summary="Disk:        $TARGET ($(lsblk -dpno SIZE "$TARGET" | tr -d ' '))
+Language:    $LANG_CODE ($LOCALE)
+Keyboard:    $KEYMAP
+Time zone:   $TIMEZONE
+User:        $USERNAME ($USER_FULLNAME)
+Hostname:    $HOSTNAME
+Extras:      ${EXTRAS:-none} (installed on first boot)
+Drivers:     all bundled kernel drivers and firmware"
+
+if has_gui; then
+    zenity --question --title="Confirm installation" \
+        --text="ElvonOS $VERSION will be installed with these settings:\n\n<b>$summary</b>\n\nAll data on $TARGET will be erased." \
+        --ok-label="Continue" --cancel-label="Cancel" 2>/dev/null || exit 0
+fi
+
+if [ "$ASSUME_YES" != "1" ]; then
+    zenity --warning --title="Warning" \
+        --text="All data on <b>$TARGET</b> will be erased!" \
+        --ok-label="Continue" 2>/dev/null || exit 0
+    confirm=$(zenity --entry --title="Confirm" \
+        --text="Type <b>ERASE</b> to continue:" 2>/dev/null) || exit 0
+    [ "$confirm" = "ERASE" ] || die "cancelled"
+fi
+
+# --- Partitioning -----------------------------------------------------------
+# Stop automatic mounting of new partitions
+systemctl stop udisks2.service 2>/dev/null || true
+pkill -x udisksd 2>/dev/null || true
+
+if mountpoint -q "$MOUNT"; then
+    umount -R "$MOUNT" 2>/dev/null || die "$MOUNT is still mounted"
+fi
+log "Partitioning $TARGET"
+sgdisk --zap-all "$TARGET" >/dev/null
+sgdisk -n 1:0:+1M   -t 1:ef02 -c 1:"BIOS boot"   "$TARGET" >/dev/null
+sgdisk -n 2:0:+512M -t 2:ef00 -c 2:"EFI System"  "$TARGET" >/dev/null
+sgdisk -n 3:0:0     -t 3:8300 -c 3:"ElvonOS root" "$TARGET" >/dev/null
+partprobe "$TARGET" 2>/dev/null || true
+udevadm settle 2>/dev/null || sleep 1
+
+mapfile -t parts < <(lsblk -lnpo NAME "$TARGET" | awk 'NR>1')
+[ "${#parts[@]}" -ge 3 ] || die "partitions not found (${parts[*]:-})"
+BIOS="${parts[0]}"
+EFI="${parts[1]}"
+ROOT="${parts[2]}"
+log "BIOS=$BIOS EFI=$EFI ROOT=$ROOT"
+
+# --- Formatting -------------------------------------------------------------
+log "Formatting"
+for svc in udisks2.service gvfs-udisks2-volume-monitor.service; do
+    systemctl stop "$svc" 2>/dev/null || true
+done
+pkill -x udisksd 2>/dev/null || true
+pkill -f gvfs-udisks2-volume-monitor 2>/dev/null || true
+udevadm settle 2>/dev/null || true
+
+format_part() {
+    local dev="$1"
+    shift
+    local attempt mounts mp
+    for attempt in 1 2 3 4 5; do
+        mounts=$(findmnt -rn -S "$dev" -o TARGET 2>/dev/null || true)
+        if [ -n "$mounts" ]; then
+            while read -r mp; do
+                [ -n "$mp" ] && umount -R "$mp" 2>/dev/null || true
+            done <<< "$mounts"
+        fi
+        if "$@" "$dev" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    log "formatting $dev failed:"
+    "$@" "$dev"
+}
+
+format_part "$EFI" mkfs.vfat -F32 -n ELVONOS-EFI
+format_part "$ROOT" mkfs.ext4 -F -L ElvonOS -m 1
+
+# --- Mount ------------------------------------------------------------------
+log "Mounting"
+mkdir -p "$MOUNT"
+mount "$ROOT" "$MOUNT"
+mkdir -p "$MOUNT/boot/efi"
+mount "$EFI" "$MOUNT/boot/efi"
+
+cleanup_mounts() {
+    for d in dev/pts dev proc sys run; do
+        umount "$MOUNT/$d" 2>/dev/null || true
+    done
+    umount "$MOUNT/boot/efi" 2>/dev/null || true
+    umount "$MOUNT" 2>/dev/null || true
+}
+trap cleanup_mounts EXIT
+
+# --- Copy -------------------------------------------------------------------
+log "Copying the system (this can take several minutes)"
+rsync -aHAXx --info=progress2 \
+    --exclude=/proc/* --exclude=/sys/* --exclude=/dev/* \
+    --exclude=/run/* --exclude=/tmp/* --exclude=/mnt/* \
+    --exclude=/media/* --exclude=/target/* \
+    --exclude=/var/lib/lxcfs/* --exclude=/var/lib/lxc/* \
+    --exclude=/var/cache/apt/archives/*.deb \
+    --exclude=/lost+found / "$MOUNT/"
+sync
+
+# Remove live-only leftovers
+rm -rf "$MOUNT"/var/tmp/mkinitramfs-* 2>/dev/null || true
+rm -rf "$MOUNT"/var/tmp/modules_* 2>/dev/null || true
+: > "$MOUNT/etc/machine-id" 2>/dev/null || true
+rm -f "$MOUNT"/etc/ssh/ssh_host_* 2>/dev/null || true
+
+# --- Kernel + initramfs -----------------------------------------------------
+KVER=$( (ls -d /lib/modules/* 2>/dev/null | sort -V | tail -n 1) || true )
+KVER=$(basename "${KVER:-}")
+[ -n "$KVER" ] || KVER=$(uname -r)
+if ! ls "$MOUNT"/boot/vmlinuz-* >/dev/null 2>&1; then
+    MEDIUM=""
+    for cand in /run/live/medium/live /lib/live/mount/medium/live; do
+        if [ -f "$cand/vmlinuz" ]; then
+            MEDIUM="$cand"
+            break
+        fi
+    done
+    [ -n "$MEDIUM" ] || die "kernel/initramfs not found (neither /boot nor live medium)"
+    log "Taking kernel $KVER from the live medium"
+    cp -f "$MEDIUM/vmlinuz" "$MOUNT/boot/vmlinuz-$KVER"
+    cp -f "$MEDIUM/initrd.img" "$MOUNT/boot/initrd.img-$KVER"
+    if [ -f "$MEDIUM/config" ]; then
+        cp -f "$MEDIUM/config" "$MOUNT/boot/config-$KVER"
+    fi
+    chmod 644 "$MOUNT/boot/vmlinuz-$KVER" "$MOUNT/boot/initrd.img-$KVER"
+fi
+ls "$MOUNT"/boot/vmlinuz-* >/dev/null 2>&1 || die "no kernel in $MOUNT/boot"
+
+# --- Base configuration -----------------------------------------------------
+log "Writing fstab, hostname, hosts"
+ROOT_UUID=$(blkid -s UUID -o value "$ROOT")
+EFI_UUID=$(blkid -s UUID -o value "$EFI")
+cat > "$MOUNT/etc/fstab" <<EOF
+UUID=$ROOT_UUID  /          ext4  defaults,noatime  0 1
+UUID=$EFI_UUID   /boot/efi  vfat  umask=0077        0 1
+EOF
+
+printf '%s\n' "$HOSTNAME" > "$MOUNT/etc/hostname"
+if grep -q '^127\.0\.1\.1' "$MOUNT/etc/hosts"; then
+    sed -i "s/^127\.0\.1\.1.*/127.0.1.1 $HOSTNAME/" "$MOUNT/etc/hosts"
+else
+    printf '127.0.1.1 %s\n' "$HOSTNAME" >> "$MOUNT/etc/hosts"
+fi
+
+# Remove live-specific kernel parameters
+sed -i 's/ boot=live//g; s/ components//g; s/ union=overlay//g' \
+    "$MOUNT/etc/default/grub" 2>/dev/null || true
+
+# --- Bootloader / initramfs -------------------------------------------------
+log "Installing GRUB and initramfs"
+for dir in dev dev/pts proc sys run; do
+    mount --bind "/$dir" "$MOUNT/$dir" 2>/dev/null || true
+done
+
+# Fresh SSH host keys
+chroot "$MOUNT" ssh-keygen -A >/dev/null 2>&1 || true
+
+chroot "$MOUNT" /usr/sbin/grub-install \
+    --target=x86_64-efi --efi-directory=/boot/efi \
+    --bootloader-id=ElvonOS \
+    --modules="ext2 part_gpt fat search_fs_uuid configfile normal" \
+    --recheck
+chroot "$MOUNT" /usr/sbin/grub-install --target=i386-pc --recheck "$TARGET" || \
+    log "BIOS GRUB not installed (EFI only)"
+chroot "$MOUNT" update-initramfs -u -k all || \
+    log "initramfs rebuild failed, keeping the live initrd"
+chroot "$MOUNT" grub-mkconfig -o /boot/grub/grub.cfg
+
+# Fallback for UEFI without persistent NVRAM entries: standalone GRUB with
+# an embedded search config.
+mkdir -p "$MOUNT/boot/efi/EFI/BOOT"
+cat > "$MOUNT/tmp/grub-embed.cfg" <<EOF
+search --fs-uuid --set=root $ROOT_UUID
+set prefix=(\$root)/boot/grub
+configfile \$prefix/grub.cfg
+EOF
+chroot "$MOUNT" grub-mkstandalone -O x86_64-efi \
+    -o /boot/efi/EFI/BOOT/BOOTX64.EFI \
+    --modules="part_gpt fat ext2 normal linux search search_fs_uuid configfile" \
+    "boot/grub/grub.cfg=/tmp/grub-embed.cfg"
+rm -f "$MOUNT/tmp/grub-embed.cfg"
+[ -f "$MOUNT/boot/efi/EFI/BOOT/BOOTX64.EFI" ] || die "EFI fallback is missing"
+
+# --- Configure locale, keyboard, timezone, user, extras ---------------------
+log "Configuring language, keyboard, time zone, user account"
+printf '%s UTF-8\n' "$LOCALE" > "$MOUNT/etc/locale.gen"
+chroot "$MOUNT" locale-gen >/dev/null 2>&1 || log "locale-gen failed"
+printf 'LANG=%s\n' "$LOCALE" > "$MOUNT/etc/default/locale"
+
+cat > "$MOUNT/etc/default/keyboard" <<EOF
+XKBMODEL="pc105"
+XKBLAYOUT="$KEYMAP"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"
+KEYMAP="$KEYMAP"
+EOF
+# Some images link /etc/vconsole.conf -> default/keyboard; replace the link
+# so both files keep their own content.
+if [ -L "$MOUNT/etc/vconsole.conf" ]; then
+    rm -f "$MOUNT/etc/vconsole.conf"
+fi
+printf 'KEYMAP=%s\n' "$KEYMAP" > "$MOUNT/etc/vconsole.conf"
+if grep -q '^XKB_DEFAULT_LAYOUT=' "$MOUNT/etc/environment" 2>/dev/null; then
+    sed -i "s/^XKB_DEFAULT_LAYOUT=.*/XKB_DEFAULT_LAYOUT=$KEYMAP/" "$MOUNT/etc/environment"
+else
+    printf 'XKB_DEFAULT_LAYOUT=%s\n' "$KEYMAP" >> "$MOUNT/etc/environment"
+fi
+
+ln -sf "/usr/share/zoneinfo/$TIMEZONE" "$MOUNT/etc/localtime"
+printf '%s\n' "$TIMEZONE" > "$MOUNT/etc/timezone"
+
+# Create the chosen account (keep the live desktop configuration)
+if [ "$USERNAME" != "elvon" ]; then
+    chroot "$MOUNT" useradd -m -s /bin/bash -c "$USER_FULLNAME" "$USERNAME"
+    rsync -aHAX \
+        --exclude='.cache/*' --exclude='.local/share/Trash/*' \
+        --exclude='.config/Win8Start.lock' \
+        "$MOUNT/home/elvon/." "$MOUNT/home/$USERNAME/"
+    # Absolute paths inside copied desktop configs still point to the live user
+    grep -rlI --exclude-dir=.cache --exclude-dir=Trash "/home/elvon" \
+        "$MOUNT/home/$USERNAME" 2>/dev/null | while read -r f; do
+        sed -i "s#/home/elvon#/home/$USERNAME#g" "$f"
+    done
+    rm -f "$MOUNT/home/$USERNAME/.config/Win8Start.lock"
+    chroot "$MOUNT" userdel -r elvon >/dev/null 2>&1 || true
+else
+    chroot "$MOUNT" usermod -c "$USER_FULLNAME" -s /bin/bash "$USERNAME"
+fi
+for grp in sudo audio video render plugdev input netdev cdrom; do
+    if chroot "$MOUNT" getent group "$grp" >/dev/null 2>&1; then
+        chroot "$MOUNT" usermod -aG "$grp" "$USERNAME"
+    fi
+done
+printf '%s:%s\n' "$USERNAME" "$USER_PASSWORD" | chroot "$MOUNT" chpasswd
+
+# Password-required sudo for the installed system
+rm -f "$MOUNT/etc/sudoers.d/elvon" "$MOUNT/etc/sudoers.d/$USERNAME"
+printf '%s ALL=(ALL:ALL) ALL\n' "$USERNAME" > "$MOUNT/etc/sudoers.d/$USERNAME"
+chmod 0440 "$MOUNT/etc/sudoers.d/$USERNAME"
+
+# Autologin on tty1
+AUTOLOGIN_FILE="$MOUNT/etc/systemd/system/getty@tty1.service.d/autologin.conf"
+if [ -f "$AUTOLOGIN_FILE" ]; then
+    sed -i "s/--autologin [^ ]*/--autologin $USERNAME/" "$AUTOLOGIN_FILE"
+fi
+
+chroot "$MOUNT" chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
+
+# Optional software: queue for first boot (needs internet)
+if [ -n "$EXTRAS" ]; then
+    mkdir -p "$MOUNT/etc/elvonos"
+    extras_json=$(printf '%s' "$EXTRAS" | tr ',' '\n' | jq -R . | jq -s .)
+    printf '{"extras": %s}\n' "$extras_json" > "$MOUNT/etc/elvonos/first-boot.json"
+    chroot "$MOUNT" systemctl enable elvonos-firstboot.service >/dev/null 2>&1 || \
+        log "could not enable first-boot service"
+fi
+
+# --- Cleanup ----------------------------------------------------------------
+log "Cleaning up"
+for dir in dev/pts dev proc sys run; do
+    umount "$MOUNT/$dir" 2>/dev/null || true
+done
+umount "$MOUNT/boot/efi" 2>/dev/null || true
+umount "$MOUNT" 2>/dev/null || true
+
+log "Done: ElvonOS is installed on $TARGET"
+if has_gui; then
+    if zenity --question --title="Installation complete" \
+        --text="ElvonOS has been installed on <b>$TARGET</b>.\n\nUser: <b>$USERNAME</b>\nLanguage: <b>$LANG_CODE</b>\n\nRestart now?" \
+        --ok-label="Restart" --cancel-label="Later" 2>/dev/null; then
+        systemctl reboot
+    fi
+fi

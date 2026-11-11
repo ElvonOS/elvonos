@@ -1,0 +1,32 @@
+diff --git a/Win8Running/main.qml b/Win8Running/main.qml
+index 7d08048..4e2f350 100644
+--- a/Win8Running/main.qml
++++ b/Win8Running/main.qml
+@@ -28,11 +28,23 @@ ApplicationWindow {
+         id: bar
+         anchors.fill: parent
+         color: "#00000000"
+-        gradient: Gradient {
+-            GradientStop { position: 0.0; color: "#D92E2E3A" }
+-            GradientStop { position: 1.0; color: "#A815151C" }
+-        }
+         border.width: 0
++        clip: true
++
++        Image {
++            anchors.fill: parent
++            source: "file:///usr/share/backgrounds/elvonos/glass-top.png"
++            fillMode: Image.Stretch
++            opacity: 0.92
++        }
++
++        Rectangle {
++            anchors.fill: parent
++            gradient: Gradient {
++                GradientStop { position: 0.0; color: "#4D23232E" }
++                GradientStop { position: 1.0; color: "#80101018" }
++            }
++        }
+ 
+         Rectangle {
+             anchors.left: parent.left

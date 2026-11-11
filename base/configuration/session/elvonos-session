@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# ElvonOS V1 — Session Entrypoint
-# Launched by Display Manager (SDDM/greetd) via /usr/share/wayland-sessions/elvonos.desktop
+# ElvonOS V1 — Session Entrypoint (Labwc)
 set -euo pipefail
 
-export XDG_CURRENT_DESKTOP="ElvonOS:Hyprland"
+# Wayland environment
+export XDG_CURRENT_DESKTOP="ElvonOS:labwc"
 export XDG_SESSION_TYPE="wayland"
 export XDG_SESSION_DESKTOP="ElvonOS"
 export QT_QPA_PLATFORM="wayland"
@@ -12,26 +12,61 @@ export GDK_BACKEND="wayland"
 export SDL_VIDEODRIVER="wayland"
 export _JAVA_AWT_WM_NONREPARENTING=1
 
-# Config location
-HYPRLAND_CONFIG="/etc/elvonos/hyprland.conf"
-if [[ -f "$HOME/.config/elvonos/hyprland.conf" ]]; then
-    HYPRLAND_CONFIG="$HOME/.config/elvonos/hyprland.conf"
+# Keyboard layout
+export XKB_DEFAULT_LAYOUT="de,us"
+
+# Avoid the xdg-desktop-portal timeout in the live ISO (Waybar/GTK).
+export GTK_USE_PORTAL="0"
+
+# Hardware / VM rendering flags
+# WLR_BACKENDS overrides wlroots' backend auto-detection. The "libinput"
+# backend must be listed explicitly, otherwise no keyboard/mouse devices
+# are opened at all.
+export WLR_NO_HARDWARE_CURSORS=1
+export WLR_RENDERER_ALLOW_SOFTWARE=1
+export WLR_BACKENDS=drm,libinput
+export WLR_RENDERER=pixman
+export WLR_DRM_NO_ATOMIC=1
+export WLR_DRM_NO_MODIFIERS=1
+
+# DRM device for wlroots/labwc (QEMU virtio-gpu exposes /dev/dri/card0)
+if [[ -c /dev/dri/card0 ]]; then
+    export WLR_DRM_DEVICES=/dev/dri/card0
 fi
 
-echo "==> Detecting compositor for ElvonOS Session..."
-if command -v Hyprland >/dev/null 2>&1; then
-    echo "==> Starting Hyprland compositor..."
+# Log session to both file and serial console (if available)
+if [[ -c /dev/ttyS0 ]]; then
+    exec > >(tee -a "$HOME/.elvonos-session.log" /dev/ttyS0) 2>&1
+else
+    exec > >(tee -a "$HOME/.elvonos-session.log") 2>&1
+fi
+
+echo "=================================================="
+echo " Starting ElvonOS Desktop Session at $(date)"
+echo "=================================================="
+
+if command -v labwc >/dev/null 2>&1; then
+    echo "==> Starting Labwc compositor..."
+    if command -v dbus-run-session >/dev/null 2>&1; then
+        exec dbus-run-session labwc
+    else
+        exec labwc
+    fi
+elif command -v Hyprland >/dev/null 2>&1; then
+    echo "==> Labwc not found, starting Hyprland compositor..."
+    HYPRLAND_CONFIG="/etc/elvonos/hyprland.conf"
+    if [[ -f "$HOME/.config/elvonos/hyprland.conf" ]]; then
+        HYPRLAND_CONFIG="$HOME/.config/elvonos/hyprland.conf"
+    fi
     exec Hyprland --config "$HYPRLAND_CONFIG"
 elif command -v sway >/dev/null 2>&1; then
-    echo "==> Hyprland not found. Launching Sway fallback compositor..."
+    echo "==> Launching Sway compositor..."
     SWAY_CONFIG="/etc/elvonos/sway.conf"
     if [[ -f "$HOME/.config/elvonos/sway.conf" ]]; then
         SWAY_CONFIG="$HOME/.config/elvonos/sway.conf"
-    elif [[ -f "/usr/share/elvonos/sway/config" ]]; then
-        SWAY_CONFIG="/usr/share/elvonos/sway/config"
     fi
     exec sway -c "$SWAY_CONFIG"
 else
-    echo "Error: Neither Hyprland nor Sway is installed!"
+    echo "Error: Neither Labwc, Hyprland nor Sway is installed!"
     exit 1
 fi

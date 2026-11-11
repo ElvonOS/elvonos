@@ -1,0 +1,104 @@
+# ElvonOS Plymouth boot splash: dark backdrop, wordmark, soft heartbeat glow
+# and a slow orbiting spinner.
+
+screen_width = Window.GetWidth();
+screen_height = Window.GetHeight();
+
+# Background scaled to the current output.
+background = Image("background.png");
+background = background.Scale(screen_width, screen_height);
+bg_sprite = Sprite(background);
+bg_sprite.SetX(0);
+bg_sprite.SetY(0);
+bg_sprite.SetZ(-100);
+
+# Soft blue glow behind the wordmark. Its opacity is animated like a slow
+# heartbeat so the backdrop appears to breathe instead of sitting still.
+glow = Image("glow.png");
+glow = glow.Scale(screen_width, screen_height);
+glow_sprite = Sprite(glow);
+glow_sprite.SetX(0);
+glow_sprite.SetY(0);
+glow_sprite.SetZ(-90);
+glow_sprite.SetOpacity(0.26);
+
+# ElvonOS wordmark.
+logo = Image("logo.png");
+logo_width = Math.Int(screen_width * 0.34);
+if (logo_width < 380) {
+    logo_width = 380;
+}
+logo_height = Math.Int(logo.GetHeight() * (logo_width / logo.GetWidth()));
+logo = logo.Scale(logo_width, logo_height);
+logo_sprite = Sprite(logo);
+logo_sprite.SetX((screen_width - logo_width) / 2);
+logo_sprite.SetY(screen_height / 2 - logo_height - 16);
+
+# Subtitle.
+subtitle = Image("subtitle.png");
+sub_width = Math.Int(screen_width * 0.30);
+if (sub_width < 420) {
+    sub_width = 420;
+}
+sub_height = Math.Int(subtitle.GetHeight() * (sub_width / subtitle.GetWidth()));
+subtitle = subtitle.Scale(sub_width, sub_height);
+subtitle_sprite = Sprite(subtitle);
+subtitle_sprite.SetX((screen_width - sub_width) / 2);
+subtitle_sprite.SetY(screen_height / 2 + 18);
+
+# Orbiting spinner.
+dot = Image("dot.png");
+dot_count = 8;
+dots = [];
+for (i = 0; i < dot_count; i++) {
+    sprite = Sprite(dot);
+    sprite.SetZ(10);
+    dots[i] = sprite;
+}
+
+# Single gaussian-like lobe used to shape the heartbeat waveform.
+fun pulse (phase, center, width)
+{
+    distance = Math.Abs(phase - center);
+    if (distance > width) {
+        return 0;
+    }
+    value = Math.Cos(distance / width * Math.Pi * 0.5);
+    return value * value * value;
+}
+
+frame = 0;
+tick = 0;
+fun refresh_callback ()
+{
+    frame = frame + 1;
+
+    # Advance the spinner once per ~0.36 s (50 fps / 18), i.e. one full turn
+    # every ~2.9 s. The previous version stepped on every frame and looked
+    # like a blur.
+    if (frame % 18 == 0) {
+        tick = tick + 1;
+    }
+    lead = tick % dot_count;
+    cx = screen_width / 2;
+    cy = screen_height / 2 + 96;
+    radius = 26;
+    for (i = 0; i < dot_count; i++) {
+        angle = i * Math.Pi * 2 / dot_count;
+        x = cx + Math.Cos(angle) * radius;
+        y = cy + Math.Sin(angle) * radius;
+        dots[i].SetX(x - 7);
+        dots[i].SetY(y - 7);
+        distance = (i - lead + dot_count) % dot_count;
+        opacity = Math.Max(0.15, 1.0 - distance * 0.11);
+        dots[i].SetOpacity(opacity);
+    }
+
+    # Slow two-thump heartbeat (120 frames = 2.4 s at 50 fps).
+    phase = (frame % 120) / 120;
+    beat = 0.26 + 0.50 * pulse(phase, 0.08, 0.10) + 0.30 * pulse(phase, 0.30, 0.12);
+    glow_sprite.SetOpacity(Math.Min(1.0, beat));
+}
+
+Plymouth.SetRefreshFunction(refresh_callback);
+Plymouth.SetRefreshRate(50);

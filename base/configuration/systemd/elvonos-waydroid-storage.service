@@ -1,0 +1,12 @@
+[Unit]
+Description=ElvonOS Waydroid shared storage
+After=elvonos-waydroid-init.service waydroid-container.service
+Wants=elvonos-waydroid-init.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/elvonos/waydroid-storage-mount.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

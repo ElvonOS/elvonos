@@ -1,0 +1,3 @@
+#!/bin/sh
+# Compatibility wrapper: create a Start-menu entry from an APK.
+exec /usr/bin/elvonos-waydroid apk-entry "$@"

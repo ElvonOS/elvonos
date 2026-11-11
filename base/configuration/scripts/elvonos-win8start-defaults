@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""Generate a default Win8Start Metro tile layout.
+
+Runs from the labwc autostart *before* Win8Start starts.  The tile positions
+are derived from the current output resolution so the layout looks correct on
+real hardware as well as in QEMU.  An existing user layout is never
+overwritten.
+"""
+
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+JSON_PATH = os.path.join(HOME, ".config", "Win8Start", "launcher_tiles.json")
+CLOCK_QML = os.path.join(HOME, ".config", "Win8Start", "tiles", "Clock", "tile.qml")
+CLOCK_ICONS = [
+    "/usr/share/icons/Papirus-Dark/24x24/actions/clock.svg",
+    "/usr/share/icons/Papirus/64x64/actions/clock.svg",
+    "/usr/share/icons/hicolor/scalable/apps/clock.svg",
+]
+
+# Metro labels are single-line and the tile is only ~120px wide, so use short
+# display names; the Apps screen still shows the full application names.
+DISPLAY_NAMES = {
+    "foot": "Foot",
+    "thunar": "Files",
+    "waydroid": "Waydroid",
+    "android": "Android",
+    "elvonos-terminal": "Terminal",
+    "org.pulseaudio.pavucontrol": "Volume",
+    "thunar-bulk-rename": "Bulk Rename",
+    "footclient": "Foot CLI",
+    "foot-server": "Foot Srv",
+    "thunar-settings": "Prefs",
+}
+
+# Extra ElvonOS tiles: launch an Android app and return to the Linux desktop.
+CUSTOM_TILES = [
+    {
+        "name": "Store",
+        "icon": "/usr/share/icons/Papirus/64x64/apps/cs-software-properties.svg",
+        "command": "elvonos-store",
+        "size": "medium",
+        "color": "#2b5b8a",
+        "x": 4,
+        "y": 0,
+    },
+    {
+        "name": "Android Shell",
+        "icon": "/usr/share/icons/elvonos/metro/android.svg",
+        "command": "elvonos-terminal --android",
+        "size": "medium",
+        "color": "#3ddc84",
+        "x": 6,
+        "y": 4,
+    },
+    {
+        "name": "Desktop",
+        "icon": "/usr/share/icons/Papirus/64x64/devices/computer.svg",
+        "command": "elvonos-desktop",
+        "size": "large",
+        "color": "#2b5797",
+        "x": 0,
+        "y": 4,
+    },
+]
+
+# Live widget tiles (QML).  They occupy the free columns to the right of the
+# app grid and update themselves through context properties.
+WIDGET_TILES = [
+    {
+        "name": "System",
+        "qml": os.path.join(HOME, ".config", "Win8Start", "tiles", "System", "tile.qml"),
+        "size": "large",
+        "color": "#1f6f5c",
+        "x": 10,
+        "y": 0,
+    },
+    {
+        "name": "Calendar",
+        "qml": os.path.join(HOME, ".config", "Win8Start", "tiles", "Merkuro Calendar", "tile.qml"),
+        "size": "large",
+        "color": "#7e3878",
+        "x": 10,
+        "y": 2,
+    },
+]
+
+ICON_DIRS = [
+    "/usr/share/icons/hicolor/scalable/apps",
+    "/usr/share/icons/hicolor/512x512/apps",
+    "/usr/share/icons/hicolor/256x256/apps",
+    "/usr/share/icons/hicolor/128x128/apps",
+    "/usr/share/icons/hicolor/64x64/apps",
+    "/usr/share/icons/hicolor/48x48/apps",
+    "/usr/share/icons/hicolor/32x32/apps",
+    "/usr/share/icons/Papirus/64x64/apps",
+    "/usr/share/icons/Papirus/48x48/apps",
+    "/usr/share/icons/Adwaita/64x64/apps",
+    "/usr/share/icons/Adwaita/48x48/apps",
+    "/usr/share/pixmaps",
+]
+
+
+def log(msg):
+    print("[win8start-defaults] " + msg, flush=True)
+
+
+def current_mode():
+    """Return (width, height) of the first output's current mode."""
+    try:
+        out = subprocess.check_output(["wlr-randr"], text=True, timeout=10)
+    except Exception as exc:  # noqa: BLE001
+        log("wlr-randr failed: %s" % exc)
+        return 1280, 768
+    match = re.search(r"(\d+)x(\d+) px.*\(current\)", out)
+    if not match:
+        log("no current mode found, falling back to 1280x768")
+        return 1280, 768
+    return int(match.group(1)), int(match.group(2))
+
+
+def grid_step(height):
+    # Mirrors Win8Start: topstrip = h/6, bottomstrip = h/10, 30px top/bottom
+    # margins; gridSize and halfGrid are integer properties in QML.
+    tilearea_h = height - height / 6.0 - height / 10.0 - 60.0
+    grid = int(tilearea_h / 4)
+    half = int(grid / 2)
+    if half < 20:
+        half = 62
+    return half
+
+
+def parse_desktop(path):
+    entry = {}
+    in_main = False
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            for raw in handle:
+                line = raw.strip()
+                if line.startswith("["):
+                    in_main = line == "[Desktop Entry]"
+                    continue
+                if not in_main or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                if key in ("Name", "Icon", "Exec", "Terminal", "NoDisplay",
+                           "Hidden", "Type"):
+                    entry.setdefault(key, value)
+    except OSError:
+        return None
+    if entry.get("Type", "Application") != "Application":
+        return None
+    if entry.get("NoDisplay", "").lower() == "true":
+        return None
+    if entry.get("Hidden", "").lower() == "true":
+        return None
+    if not entry.get("Name"):
+        return None
+    command = entry.get("Exec", "")
+    command = re.sub(r"%[UuFfDdNnVvMm]", "", command).strip()
+    entry["Exec"] = command
+    entry["Terminal"] = entry.get("Terminal", "false").lower() == "true"
+    return entry
+
+
+def resolve_icon(name):
+    if not name:
+        return ""
+    if os.path.exists(name):
+        return name
+    for directory in ICON_DIRS:
+        for ext in (".svg", ".png", ".xpm"):
+            candidate = os.path.join(directory, name + ext)
+            if os.path.exists(candidate):
+                return candidate
+    return name
+
+
+def load_apps():
+    apps = {}
+    for path in sorted(glob.glob("/usr/share/applications/*.desktop")):
+        entry = parse_desktop(path)
+        if entry:
+            key = os.path.basename(path)[:-len(".desktop")].lower()
+            apps[key] = (entry, path)
+    local = os.path.join(HOME, ".local", "share", "applications")
+    for path in sorted(glob.glob(os.path.join(local, "*.desktop"))):
+        entry = parse_desktop(path)
+        if entry:
+            key = os.path.basename(path)[:-len(".desktop")].lower()
+            apps.setdefault(key, (entry, path))
+    return apps
+
+
+def tile(name, icon, desktop_file, command, terminal, x, y, size, color,
+         qml="", qml_enabled=False):
+    return {
+        "name": name,
+        "icon": icon,
+        "desktopFile": desktop_file,
+        "command": command,
+        "modelX": x,
+        "modelY": y,
+        "size": size,
+        "terminal": terminal,
+        "color": color,
+        "qmlPath": qml,
+        "qmlEnabled": qml_enabled,
+    }
+
+
+def main():
+    if os.path.exists(JSON_PATH):
+        log("layout already exists, leaving it untouched: " + JSON_PATH)
+        return 0
+
+    width, height = current_mode()
+    half = grid_step(height)
+    log("output %dx%d, half-grid %dpx" % (width, height, half))
+
+    apps = load_apps()
+    tiles = []
+
+    # Large live clock tile (4x4 half-grid cells).
+    if os.path.exists(CLOCK_QML):
+        icon = ""
+        for candidate in CLOCK_ICONS:
+            if os.path.exists(candidate):
+                icon = candidate
+                break
+        tiles.append(tile("Clock", icon, "", "", False, 0, 0, "xlarge",
+                          "#2b5797", CLOCK_QML, True))
+    else:
+        log("clock live tile not found: " + CLOCK_QML)
+
+    # Slots in half-grid units: key, x, y, size, color.
+    layout = [
+        ("thunar", 4, 2, "medium", "#00a4ef"),
+        ("android", 6, 0, "medium", "#3ddc84"),
+        ("org.pulseaudio.pavucontrol", 6, 2, "medium", "#da532c"),
+        ("elvonos-terminal", 8, 0, "medium", "#2b5797"),
+        ("thunar-bulk-rename", 8, 2, "medium", "#603cba"),
+        ("elvonos-terminal", 4, 4, "medium", "#2b5797"),
+        ("thunar-settings", 8, 4, "medium", "#00a4ef"),
+    ]
+
+    for key, gx, gy, size, color in layout:
+        item = apps.get(key)
+        if not item:
+            log("desktop entry not found, skipping: " + key)
+            continue
+        entry, path = item
+        tiles.append(tile(
+            DISPLAY_NAMES.get(key, entry.get("Name", key)),
+            resolve_icon(entry.get("Icon", "")),
+            path,
+            entry.get("Exec", ""),
+            entry.get("Terminal", False),
+            gx * half, gy * half, size, color,
+        ))
+
+    # ElvonOS extras: Aurora Store (Android) and a tile that closes Start.
+    for spec in CUSTOM_TILES:
+        tiles.append(tile(
+            spec["name"], spec["icon"], "", spec["command"], False,
+            spec["x"] * half, spec["y"] * half, spec["size"], spec["color"],
+        ))
+
+    # Live widget tiles (System monitor, calendar).
+    for spec in WIDGET_TILES:
+        if not os.path.exists(spec["qml"]):
+            log("widget not found, skipping: " + spec["qml"])
+            continue
+        tiles.append(tile(
+            spec["name"], "", "", "", False,
+            spec["x"] * half, spec["y"] * half, spec["size"], spec["color"],
+            spec["qml"], True,
+        ))
+
+    if not tiles:
+        log("no tiles generated, aborting")
+        return 1
+
+    os.makedirs(os.path.dirname(JSON_PATH), exist_ok=True)
+    with open(JSON_PATH, "w", encoding="utf-8") as handle:
+        json.dump(tiles, handle, indent=2)
+        handle.write("\n")
+    os.chmod(JSON_PATH, 0o644)
+    log("wrote %d tiles to %s" % (len(tiles), JSON_PATH))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

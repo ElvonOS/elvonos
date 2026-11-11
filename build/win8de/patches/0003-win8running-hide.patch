@@ -1,0 +1,44 @@
+diff --git a/Win8Running/main.cpp b/Win8Running/main.cpp
+--- a/Win8Running/main.cpp
++++ b/Win8Running/main.cpp
+@@ -395,12 +395,22 @@
+     QString socketPath = QDir::homePath() + "/.config/window-switcher/toggle.sock";
+ 
+     // Try to connect to an existing instance
++    QString toggleMessage = "toggle";
++    if (app.arguments().contains("--hide")) {
++        toggleMessage = "hide";
++    } else if (app.arguments().contains("--show")) {
++        toggleMessage = "show";
++    }
++
+     QLocalSocket sock;
+     sock.connectToServer(socketPath);
+     if (sock.waitForConnected(50)) {
+-        sock.write("toggle");
++        sock.write(toggleMessage.toUtf8());
+         sock.flush();
+-        return 0;  // Existing instance toggled, exit
++        return 0;  // Existing instance received the command, exit
++    }
++    if (toggleMessage == "hide") {
++        return 0;  // Nothing to hide
+     }
+     
+     // QML engine + backend objects must be registered before load()
+@@ -488,7 +498,14 @@
+     QObject::connect(server, &QLocalServer::newConnection, [controller, server]() {
+         auto *client = server->nextPendingConnection();
+         QObject::connect(client, &QLocalSocket::readyRead, [controller, client]() {
+-            controller->toggle();
++            QByteArray message = client->readAll().trimmed();
++            if (message == "hide") {
++                controller->hide();
++            } else if (message == "show") {
++                controller->show();
++            } else {
++                controller->toggle();
++            }
+             client->disconnectFromServer();
+             client->deleteLater();
+         });

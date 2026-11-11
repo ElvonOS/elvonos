@@ -1,0 +1,91 @@
+#!/usr/bin/python3
+"""Play ElvonOS system sounds.
+
+Events: startup, notification, error, complete, lock.
+The defaults come from the freedesktop sound theme (Debian main, free
+licence); a custom file can be selected per event in Einstellungen → Design
+and is stored in ~/.config/elvonos/sounds.json.
+
+Usage:
+    elvonos-sound play EVENT [FILE]
+    elvonos-sound list [--json]
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+CONFIG = os.path.join(HOME, ".config", "elvonos", "sounds.json")
+THEME = "/usr/share/sounds/freedesktop/stereo"
+DEFAULTS = {
+    "startup": THEME + "/service-login.oga",
+    "notification": THEME + "/message.oga",
+    "error": THEME + "/dialog-error.oga",
+    "complete": THEME + "/complete.oga",
+    "lock": THEME + "/dialog-warning.oga",
+}
+PLAYERS = [
+    ["paplay"],
+    ["pw-play"],
+    ["aplay", "-q"],
+]
+
+
+def load():
+    settings = dict(DEFAULTS)
+    try:
+        with open(CONFIG, encoding="utf-8") as handle:
+            data = json.load(handle)
+        for key, value in data.items():
+            if key in settings and isinstance(value, str) and value:
+                settings[key] = value
+    except (OSError, ValueError):
+        pass
+    return settings
+
+
+def play(path):
+    if not path or not os.path.exists(path):
+        return False
+    for player in PLAYERS:
+        if shutil.which(player[0]):
+            try:
+                subprocess.Popen(player + [path],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+                return True
+            except OSError:
+                continue
+    return False
+
+
+def main():
+    arguments = sys.argv[1:]
+    if not arguments:
+        print("Usage: elvonos-sound play EVENT [FILE] | list [--json]")
+        return 2
+    command = arguments[0]
+    if command == "list":
+        settings = load()
+        if "--json" in arguments:
+            print(json.dumps(settings, indent=2))
+        else:
+            for key, path in settings.items():
+                print(f"{key:14s} {path}")
+        return 0
+    if command == "play":
+        if len(arguments) < 2:
+            print("Missing event name", file=sys.stderr)
+            return 2
+        event = arguments[1]
+        path = arguments[2] if len(arguments) > 2 else load().get(event, "")
+        return 0 if play(path) else 1
+    print("Unknown command: " + command, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

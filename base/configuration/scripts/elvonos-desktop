@@ -1,0 +1,11 @@
+#!/bin/bash
+# ElvonOS desktop switch helper
+#
+# Closes the Start overlay.  Win8Start itself now synchronises the desktop
+# toolbar: hiding Start shows the Win8Running switcher/taskbar, showing Start
+# hides it again.
+set -u
+
+Win8Start 2>/dev/null || true
+
+exit 0

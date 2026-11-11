@@ -1,0 +1,24 @@
+# ElvonOS V1 — dark Labwc theme override
+window.active.border.color: #8aadf4
+window.inactive.border.color: #363a4f
+
+window.active.title.bg.color: #24273a
+window.inactive.title.bg.color: #1e2030
+window.active.label.text.color: #cad3f5
+window.inactive.label.text.color: #8087a2
+
+window.active.button.unpressed.image.color: #cad3f5
+window.inactive.button.unpressed.image.color: #8087a2
+
+menu.items.bg.color: #181926
+menu.items.text.color: #cad3f5
+menu.items.active.bg.color: #8aadf4
+menu.items.active.text.color: #181926
+menu.title.bg.color: #24273a
+menu.title.text.color: #cad3f5
+menu.border.color: #363a4f
+menu.separator.color: #363a4f
+
+osd.bg.color: #181926
+osd.border.color: #8aadf4
+osd.label.text.color: #cad3f5

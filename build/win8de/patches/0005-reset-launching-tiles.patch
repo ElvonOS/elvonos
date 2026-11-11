@@ -1,0 +1,62 @@
+diff --git a/Win8Start/main.qml b/Win8Start/main.qml
+--- a/Win8Start/main.qml
++++ b/Win8Start/main.qml
+@@ -1015,9 +1015,48 @@
+                                 
+                                 tile.launching = true
+                                 container.anyTileLaunching = true
++                                launchTimeout.restart()
+                                 AppLauncher.launchApp(tile.command, tile.terminal)
+                         }
+                         
++                        // A launch that closes Start without creating a window
++                        // (the Desktop tile) never triggers finishLaunch(), and
++                        // an animation suspended while Start is hidden would
++                        // otherwise leave the tile enlarged/offset.  Reset the
++                        // tile to its model geometry once the launch is over.
++                        function resetLaunchState() {
++                            if (!tile.launching && zoomScale.xScale === 1
++                                    && tile.x === modelX && tile.y === modelY)
++                                return
++                            console.log("↩ reset launch state:", tile.name,
++                                        "tile", tile.x, tile.y,
++                                        "model", modelX, modelY)
++                            tile.launching = false
++                            container.anyTileLaunching = false
++                            tile.x = modelX
++                            tile.y = modelY
++                            zoomScale.xScale = 1
++                            zoomScale.yScale = 1
++                            flipRotation.angle = 0
++                            flipRotation2.angle = 0
++                            zoomiconScale.xScale = 1
++                            zoomiconScale.yScale = 1
++                            flipiconRotation.angle = 0
++                            flipiconRotation2.angle = 0
++                            animationFinished = false
++                            windowAppeared = false
++                        }
++                        
++                        Timer {
++                            id: launchTimeout
++                            interval: 1500
++                            repeat: false
++                            onTriggered: {
++                                if (tile.launching)
++                                    tile.resetLaunchState()
++                            }
++                        }
++                        
+                         function updateSnapGhost() {
+                             const p = container.nearestFreeSnap(
+                                 tile.x,
+@@ -1692,6 +1731,9 @@
+                             
+                             function onVisibleChanged(visible) {
+                                 if (visible) {
++                                    // Also covers the case where the launch
++                                    // animation was suspended while hidden.
++                                    tile.resetLaunchState()
+                                     tile.appeared = false
+                                     appearAnim.start()
+                                 }

@@ -1,0 +1,15 @@
+[Unit]
+Description=ElvonOS Waydroid supervisor
+Documentation=file:///usr/share/doc/elvonos/waydroid.md
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/elvonos-waydroid daemon
+ExecStop=/usr/bin/elvonos-waydroid stop
+Restart=on-failure
+RestartSec=10
+# Session and container are started by the daemon; it also keeps the
+# clipboard/notification bridge and the Start-menu entries alive.
+
+[Install]
+WantedBy=default.target

@@ -9,6 +9,10 @@ default_floating_border pixel 2
 gaps inner 6
 gaps outer 10
 
+# QEMU/virtio-vga: use a usable desktop resolution in the VM.
+# On real hardware the output name differs, so this command is a no-op.
+exec swaymsg output Virtual-1 mode 1280x768
+
 # Input configuration
 input type:touchpad {
     dwt enabled
@@ -29,10 +33,21 @@ for_window [app_id="thunar"] floating enable
 
 # Keybindings
 bindsym $mod+Return exec foot
-bindsym $mod+d exec wofi --show drun
+bindsym $mod+d exec /usr/bin/elvonos-menu
+bindsym $mod+Shift+d exec wofi --show drun
 bindsym $mod+q kill
 bindsym $mod+f fullscreen toggle
 bindsym $mod+space floating toggle
+
+# Focus / move
+bindsym $mod+Left focus left
+bindsym $mod+Right focus right
+bindsym $mod+Up focus up
+bindsym $mod+Down focus down
+bindsym $mod+Shift+Left move left
+bindsym $mod+Shift+Right move right
+bindsym $mod+Shift+Up move up
+bindsym $mod+Shift+Down move down
 
 # Workspaces
 bindsym $mod+1 workspace number 1
@@ -47,8 +62,26 @@ bindsym $mod+Shift+3 move container to workspace number 3
 bindsym $mod+Shift+4 move container to workspace number 4
 bindsym $mod+Shift+5 move container to workspace number 5
 
-# Launch Bottom Taskbar (Waybar) directly via exec
-exec waybar -c /etc/xdg/waybar/config -s /etc/xdg/waybar/style.css
+# ─── Bottom Taskbar (swaybar) ───────────────────────────────────────
+# The status command provides a clickable "Start" block (i3bar protocol)
+# and opens /usr/bin/elvonos-menu on click.
+bar {
+    position bottom
+    height 36
+    status_command /usr/bin/elvonos-status
+    font pango:Noto Sans 12
+
+    colors {
+        background #181926ee
+        statusline #cad3f5
+        separator #363a4f
+
+        focused_workspace #8aadf4 #8aadf4 #181926
+        active_workspace #363a4f #363a4f #cad3f5
+        inactive_workspace #24273a #24273a #8087a2
+        urgent_workspace #ed8796 #ed8796 #181926
+    }
+}
 
 # Autostart ElvonOS background session
 exec /usr/bin/elvonos-session-startup

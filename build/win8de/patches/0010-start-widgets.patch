@@ -1,0 +1,195 @@
+diff --git a/Win8Running/main.cpp b/Win8Running/main.cpp
+index 51c500f..a595e7c 100644
+--- a/Win8Running/main.cpp
++++ b/Win8Running/main.cpp
+@@ -353,14 +353,6 @@ public:
+         
+         window->hide();
+         emit visibleChanged();
+-        
+-        // Close and quit after 15 seconds if still hidden
+-        QTimer::singleShot(15000, this, [this]() {
+-            if (window && !window->isVisible()) {
+-                window->close();  
+-                QCoreApplication::quit();
+-            }
+-        });
+     }
+ 
+     Q_INVOKABLE void toggle() {
+diff --git a/Win8Start/main.cpp b/Win8Start/main.cpp
+index 4c208ef..cb6f879 100644
+--- a/Win8Start/main.cpp
++++ b/Win8Start/main.cpp
+@@ -30,6 +30,7 @@
+ 
+ #include <QDebug>
+ #include <QTimer>
++#include <QThread>
+ #include <algorithm>
+ #include <pwd.h>
+ #include <unistd.h>
+@@ -338,7 +339,94 @@ private:
+ // ----------------------------
+ // AppLauncher class (FULL VERSION WITH CACHING + ASYNC)
+ // ----------------------------
++
++/* ---------------- System information (widgets) ---------------- */
++
++class SystemInfo : public QObject {
++  Q_OBJECT
++  Q_PROPERTY(double cpuLoad READ cpuLoad NOTIFY updated)
++  Q_PROPERTY(double memoryPercent READ memoryPercent NOTIFY updated)
++  Q_PROPERTY(int memoryUsedMb READ memoryUsedMb NOTIFY updated)
++  Q_PROPERTY(int memoryTotalMb READ memoryTotalMb NOTIFY updated)
++  Q_PROPERTY(int batteryPercent READ batteryPercent NOTIFY updated)
++  Q_PROPERTY(bool charging READ charging NOTIFY updated)
++
++public:
++  explicit SystemInfo(QObject *parent = nullptr) : QObject(parent) {
++    auto *timer = new QTimer(this);
++    timer->setInterval(2000);
++    connect(timer, &QTimer::timeout, this, &SystemInfo::refresh);
++    timer->start();
++    refresh();
++  }
++
++  double cpuLoad() const { return m_cpu; }
++  double memoryPercent() const { return m_memoryPercent; }
++  int memoryUsedMb() const { return m_memoryUsedMb; }
++  int memoryTotalMb() const { return m_memoryTotalMb; }
++  int batteryPercent() const { return m_battery; }
++  bool charging() const { return m_charging; }
++
++signals:
++  void updated();
++
++private:
++  void refresh() {
++    QFile meminfo("/proc/meminfo");
++    if (meminfo.open(QIODevice::ReadOnly)) {
++      const QString text = QString::fromLatin1(meminfo.readAll());
++      const QRegularExpression totalRe("MemTotal:\\s+(\\d+)");
++      const QRegularExpression availRe("MemAvailable:\\s+(\\d+)");
++      const auto totalMatch = totalRe.match(text);
++      const auto availMatch = availRe.match(text);
++      if (totalMatch.hasMatch() && availMatch.hasMatch()) {
++        const int totalKb = totalMatch.captured(1).toInt();
++        const int availKb = availMatch.captured(1).toInt();
++        m_memoryTotalMb = totalKb / 1024;
++        m_memoryUsedMb = (totalKb - availKb) / 1024;
++        m_memoryPercent = totalKb > 0 ? 100.0 * (totalKb - availKb) / totalKb : 0.0;
++      }
++    }
++
++    QFile loadavg("/proc/loadavg");
++    if (loadavg.open(QIODevice::ReadOnly)) {
++      const double load = QString::fromLatin1(loadavg.readAll()).split(' ').first().toDouble();
++      int cores = QThread::idealThreadCount();
++      if (cores < 1)
++        cores = 1;
++      m_cpu = qBound(0.0, 100.0 * load / cores, 100.0);
++    }
++
++    m_battery = -1;
++    m_charging = false;
++    QDir powerSupply("/sys/class/power_supply");
++    for (const QString &entry : powerSupply.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
++      if (!entry.startsWith("BAT"))
++        continue;
++      QFile capacity(powerSupply.filePath(entry) + "/capacity");
++      if (capacity.open(QIODevice::ReadOnly))
++        m_battery = QString::fromLatin1(capacity.readAll()).trimmed().toInt();
++      QFile status(powerSupply.filePath(entry) + "/status");
++      if (status.open(QIODevice::ReadOnly)) {
++        const QString state = QString::fromLatin1(status.readAll()).trimmed();
++        m_charging = state == "Charging" || state == "Full";
++      }
++      break;
++    }
++
++    emit updated();
++  }
++
++  double m_cpu = 0.0;
++  double m_memoryPercent = 0.0;
++  int m_memoryUsedMb = 0;
++  int m_memoryTotalMb = 0;
++  int m_battery = -1;
++  bool m_charging = false;
++};
++
+ class AppLauncher : public QObject {
++
+   Q_OBJECT
+ public:
+   explicit AppLauncher(QObject *parent = nullptr) : QObject(parent) {}
+@@ -1606,12 +1694,8 @@ private:
+       m_window->showFullScreen();
+       m_window->raise();
+       m_window->requestActivate();
+-      // Hide the left-hand Win8Running switcher/taskbar while Start is open.
+-      QProcess::startDetached("Win8Running", {"--hide"});
+     } else {
+       m_window->hide();
+-      // Show the desktop taskbar/window switcher again on the desktop.
+-      QProcess::startDetached("Win8Running", {"--show"});
+     }
+   }
+ };
+@@ -1828,6 +1912,7 @@ int main(int argc, char *argv[]) {
+   // Backend objects (must exist before QML is evaluated)
+   // --------------------------------------------------------
+   AppLauncher launcher;
++  SystemInfo systemInfo;
+   AppModel appModel;
+   TileModel tileModel;
+   PowerControl powerControl;
+@@ -1836,6 +1921,7 @@ int main(int argc, char *argv[]) {
+   WindowController windowController;
+ 
+   engine.rootContext()->setContextProperty("AppLauncher", &launcher);
++  engine.rootContext()->setContextProperty("systemInfo", &systemInfo);
+   engine.rootContext()->setContextProperty("appModel", &appModel);
+   engine.rootContext()->setContextProperty("tileModel", &tileModel);
+   engine.rootContext()->setContextProperty("powerControl", &powerControl);
+diff --git a/Win8Start/main.qml b/Win8Start/main.qml
+index b8438e2..5237c8e 100644
+--- a/Win8Start/main.qml
++++ b/Win8Start/main.qml
+@@ -1080,7 +1080,7 @@ ApplicationWindow {
+                         
+                         
+                         function launch() {
+-                            if (tile.launching)
++                            if (tile.launching || !tile.command || tile.command.length === 0)
+                                 return
+                                 
+                                 tile.launching = true
+@@ -1423,7 +1423,7 @@ ApplicationWindow {
+                             font.weight: 600
+                             width: parent.width - 10
+                             z: 2
+-                            visible: !tile.launching && tile.size !== "small"
++                            visible: !tile.launching && tile.size !== "small" && !tile.qmlEnabled
+                         }
+                         
+                         //-----------------------------------------------------------
+@@ -1446,6 +1446,7 @@ ApplicationWindow {
+                             sourceSize.width: 256
+                             sourceSize.height: 256
+                             asynchronous: true
++                            visible: !tile.qmlEnabled
+                             // transforms
+                             transform: [
+                                 Rotation {
+@@ -1478,8 +1479,7 @@ ApplicationWindow {
+                             sourceSize.width: 25
+                             sourceSize.height: 25
+                             z:2
+-                            visible: !tile.launching
+-                            && tile.qmlEnabled
++                            visible: false
+                             
+                         }
+                         

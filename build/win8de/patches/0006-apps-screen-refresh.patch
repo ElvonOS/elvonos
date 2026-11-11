@@ -1,0 +1,40 @@
+diff --git a/Win8Start/main.cpp b/Win8Start/main.cpp
+index b0bb8f4..8da7ae2 100644
+--- a/Win8Start/main.cpp
++++ b/Win8Start/main.cpp
+@@ -1941,6 +1941,17 @@ int main(int argc, char *argv[]) {
+ 
+   QTimer::singleShot(0, [&launcher]() { launcher.listApplicationsAsync(); });
+ 
++  // Watch the per-user application directory so Android APK entries created
++  // by Aurora Store or the ElvonOS APK installer appear without a restart.
++  QFileSystemWatcher appDirWatcher;
++  const QString userAppsDir =
++      QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
++  if (QDir().mkpath(userAppsDir)) {
++    appDirWatcher.addPath(userAppsDir);
++    QObject::connect(&appDirWatcher, &QFileSystemWatcher::directoryChanged,
++                     [&launcher]() { launcher.listApplicationsAsync(); });
++  }
++
+   QObject::connect(&windowController, &WindowController::visibleChanged,
+                    [&](bool visible) {
+                      if (visible) {
+diff --git a/Win8Start/main.qml b/Win8Start/main.qml
+index e780bf4..4c927f6 100644
+--- a/Win8Start/main.qml
++++ b/Win8Start/main.qml
+@@ -1760,6 +1760,13 @@ ApplicationWindow {
+             NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
+         }
+         
++        // Android apps appear as .desktop files while the session is running.
++        // Rescan whenever the Apps screen is opened.
++        onYChanged: {
++            if (y === 0)
++                AppLauncher.refreshApplications()
++        }
++        
+         Item {
+             id: topstrip2
+             anchors.top: parent.top

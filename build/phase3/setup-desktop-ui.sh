@@ -24,7 +24,7 @@ cat << 'BANNER'
  | |___| |\ V / (_) | | | | |_| |___) |
  |_____|_| \_/ \___/|_| |_|\___/|____/ 
 BANNER
-echo -e "\033[0;32mWelcome to ElvonOS V1 (Debian 13 Trixie + Sway/Hyprland + Waydroid)\033[0m"
+echo -e "\033[0;32mWelcome to ElvonOS V1 (Debian 13 Trixie + Labwc + Waydroid)\033[0m"
 echo -e "Shortcuts:"
 echo -e "  \033[1mSuper + Enter\033[0m : Terminal (foot)"
 echo -e "  \033[1mSuper + D\033[0m     : App Launcher (wofi)"

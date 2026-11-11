@@ -1,0 +1,26 @@
+[Desktop Entry]
+Type=Application
+Name=Taskbar Settings
+Name[de]=Taskleisten-Einstellungen
+Name[fr]=Paramètres de la barre des tâches
+Name[es]=Configuración de la barra de tareas
+Name[it]=Impostazioni della barra delle applicazioni
+Name[pt]=Configurações da barra de tarefas
+Name[nl]=Taakbalkinstellingen
+Name[pl]=Ustawienia paska zadań
+Name[ru]=Настройки панели задач
+Name[tr]=Görev Çubuğu Ayarları
+Name[uk]=Налаштування панелі завдань
+Name[cs]=Nastavení hlavního panelu
+Name[sv]=Aktivitetsfältsinställningar
+Name[zh_CN]=任务栏设置
+Name[ja]=タスクバーの設定
+GenericName=Taskbar Settings
+Comment=Configure the ElvonOS taskbar, system tray and window grouping
+Exec=elvonos-taskbar-settings
+Icon=preferences-system
+Terminal=false
+StartupNotify=true
+NoDisplay=true
+Categories=Settings;System;
+Keywords=taskbar;tray;dock;windows;group;

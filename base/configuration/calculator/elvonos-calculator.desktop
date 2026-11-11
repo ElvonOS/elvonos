@@ -1,0 +1,25 @@
+[Desktop Entry]
+Type=Application
+Name=Calculator
+Name[de]=Rechner
+Name[fr]=Calculatrice
+Name[es]=Calculadora
+Name[it]=Calcolatrice
+Name[pt]=Calculadora
+Name[nl]=Rekenmachine
+Name[pl]=Kalkulator
+Name[ru]=Калькулятор
+Name[tr]=Hesap Makinesi
+Name[uk]=Калькулятор
+Name[cs]=Kalkulačka
+Name[sv]=Kalkylator
+Name[zh_CN]=计算器
+Name[ja]=電卓
+GenericName=Calculator
+Comment=Perform basic and scientific calculations
+Exec=elvonos-calculator
+Icon=accessories-calculator
+Terminal=false
+StartupNotify=true
+Categories=Utility;Calculator;
+Keywords=calculator;math;arithmetic;calc;rechner;

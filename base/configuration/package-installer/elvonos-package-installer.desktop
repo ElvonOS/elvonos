@@ -1,0 +1,26 @@
+[Desktop Entry]
+Type=Application
+Name=Package Installer
+Name[de]=Paketinstaller
+Name[fr]=Installateur de paquets
+Name[es]=Instalador de paquetes
+Name[it]=Installatore pacchetti
+Name[pt]=Instalador de pacotes
+Name[nl]=Pakketinstallatie
+Name[pl]=Instalator pakietów
+Name[ru]=Установщик пакетов
+Name[tr]=Paket Yükleyici
+Name[uk]=Інсталятор пакетів
+Name[cs]=Instalátor balíčků
+Name[sv]=Paketinstallatör
+Name[zh_CN]=软件包安装程序
+Name[ja]=パッケージインストーラー
+GenericName=Package Installer
+Comment=Install Debian packages and run AppImages
+Exec=elvonos-package-installer %f
+Icon=system-software-install
+Terminal=false
+StartupNotify=true
+NoDisplay=true
+MimeType=application/vnd.debian.binary-package;application/x-appimage;
+Categories=System;PackageManager;

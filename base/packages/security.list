@@ -1,4 +1,5 @@
 # Security, policy, and container base
+sudo
 apparmor
 apparmor-profiles
 polkitd

@@ -6,8 +6,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ROOTFS="${1:-$REPO_ROOT/build/out/rootfs}"
+VERSION="${ELVONOS_VERSION:-1.0.0}"
 ISO_STAGING="$REPO_ROOT/build/out/iso_staging"
-OUTPUT_ISO="$REPO_ROOT/build/out/ElvonOS-1.0.0-amd64.iso"
+OUTPUT_ISO="$REPO_ROOT/build/out/ElvonOS-$VERSION-amd64.iso"
 
 if [[ $EUID -ne 0 ]]; then
     if ! sudo -n true 2>/dev/null; then
@@ -44,8 +45,10 @@ echo "ElvonOS V1 (Debian 13 Trixie - amd64)" | tee "$ISO_STAGING/.disk/info" >/d
 
 # 1. Copy Kernel and Initrd from Rootfs
 echo "==> Extracting kernel and initramfs from rootfs..."
-KERNEL_BIN=$(ls -1 "$ROOTFS"/boot/vmlinuz-* | head -n 1)
-INITRD_BIN=$(ls -1 "$ROOTFS"/boot/initrd.img-* | head -n 1)
+KERNEL_BIN=$(ls -1 "$ROOTFS"/boot/vmlinuz-*elvonos* 2>/dev/null | head -n 1 || true)
+[ -n "$KERNEL_BIN" ] || KERNEL_BIN=$(ls -1 "$ROOTFS"/boot/vmlinuz-* | head -n 1)
+INITRD_BIN=$(ls -1 "$ROOTFS"/boot/initrd.img-*elvonos* 2>/dev/null | head -n 1 || true)
+[ -n "$INITRD_BIN" ] || INITRD_BIN=$(ls -1 "$ROOTFS"/boot/initrd.img-* | head -n 1)
 
 if [[ -z "$KERNEL_BIN" || -z "$INITRD_BIN" ]]; then
     echo "Error: Kernel or initrd missing in rootfs /boot"
@@ -54,6 +57,11 @@ fi
 
 $SUDO cp -f "$KERNEL_BIN" "$ISO_STAGING/live/vmlinuz"
 $SUDO cp -f "$INITRD_BIN" "$ISO_STAGING/live/initrd.img"
+# Kernel-Config mitliefern (der Installer braucht sie für update-initramfs)
+CONFIG_BIN=$(ls -1 "$ROOTFS"/boot/config-* 2>/dev/null | head -n 1 || true)
+if [[ -n "$CONFIG_BIN" ]]; then
+    $SUDO cp -f "$CONFIG_BIN" "$ISO_STAGING/live/config"
+fi
 
 # 2. Bundle Waydroid Android 13 Images
 echo "==> Bundling Waydroid Android 13 images..."
@@ -64,6 +72,24 @@ if [[ -f "$REPO_ROOT/Android/Waydroid-images/system.img" && -f "$REPO_ROOT/Andro
     echo "==> Bundled system.img and vendor.img with checksums."
 else
     echo "Warning: Waydroid images not found in Android/Waydroid-images/."
+fi
+
+# 2b. ElvonOS version and update trust anchor (see documentation/11-*)
+printf 'VERSION=%s\n' "${ELVONOS_VERSION:-1.0.0}" | \
+    $SUDO tee "$ROOTFS/etc/elvonos-release" >/dev/null
+# License texts shipped with the image
+$SUDO install -Dm644 "$REPO_ROOT/LICENSE" "$ROOTFS/usr/share/doc/elvonos/LICENSE"
+$SUDO install -Dm644 "$REPO_ROOT/LICENSES.md" "$ROOTFS/usr/share/doc/elvonos/LICENSES.md"
+$SUDO install -Dm644 "$REPO_ROOT/documentation/14-licensing.md" \
+    "$ROOTFS/usr/share/doc/elvonos/licensing-decision.md"
+# Component version shipped with this image (payload updates compare against it)
+$SUDO mkdir -p "$ROOTFS/var/lib/elvonos/components"
+printf '%s\n' "${ELVONOS_VERSION:-1.0.0}" | \
+    $SUDO tee "$ROOTFS/var/lib/elvonos/components/elvonos-apps.version" >/dev/null
+if [[ -x "$REPO_ROOT/build/update/install-update-key.sh" ]]; then
+    ELVONOS_UPDATE_KEY="${ELVONOS_UPDATE_KEY:-$HOME/.config/elvonos/keys/elvonos.pub}" \
+        bash "$REPO_ROOT/build/update/install-update-key.sh" "$ROOTFS" || \
+        echo "==> No update signing key installed (optional)."
 fi
 
 # 3. Create SquashFS Filesystem
@@ -77,6 +103,10 @@ else
         -e boot \
         -e tmp/* \
         -e var/cache/apt/archives/* \
+        -e proc/* \
+        -e sys/* \
+        -e dev/* \
+        -e run/* \
         -noappend
 fi
 
@@ -103,13 +133,13 @@ search --no-floppy --set=root --file /live/vmlinuz
 set menu_color_normal=white/black
 set menu_color_highlight=black/light-gray
 
-menuentry "ElvonOS V1 Live (Debian 13 + Sway/Hyprland + Waydroid)" {
-    linux /live/vmlinuz boot=live components console=tty0 console=ttyS0,115200n8
+menuentry "ElvonOS V1 Live (Debian 13 + Labwc + Waydroid)" {
+    linux /live/vmlinuz boot=live components apparmor=0 security=selinux console=tty0 console=ttyS0,115200n8 username=elvon nox11autologin nottyautologin quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0
     initrd /live/initrd.img
 }
 
 menuentry "ElvonOS V1 (Failsafe / Nomodeset)" {
-    linux /live/vmlinuz boot=live components nomodeset console=tty0 console=ttyS0,115200n8
+    linux /live/vmlinuz boot=live components nomodeset apparmor=0 console=tty0 console=ttyS0,115200n8 username=elvon nox11autologin nottyautologin quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0
     initrd /live/initrd.img
 }
 EOF

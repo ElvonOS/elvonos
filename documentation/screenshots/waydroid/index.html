@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>ElvonOS · Waydroid integration</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 32px; font-family: system-ui, sans-serif;
+           background: #0c1018; color: #e9ecf2; }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+    p { color: #9aa4b2; max-width: 940px; }
+    .metrics { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0 0; }
+    .metric { background: #151b26; border: 1px solid #2a3342; border-radius: 10px;
+              padding: 10px 14px; font-size: 13px; color: #c3c9d2; }
+    .metric b { color: #7fe0a0; font-size: 16px; }
+    .grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); margin-top: 28px; }
+    figure { margin: 0; background: #151b26; border: 1px solid #2a3342; border-radius: 14px; overflow: hidden; }
+    img { display: block; width: 100%; height: auto; }
+    figcaption { padding: 12px 16px; font-size: 13px; color: #c3c9d2; }
+    code { background: #0f141c; padding: 1px 5px; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Waydroid ↔ ElvonOS</h1>
+  <p>Native Rust-Session, nativer App-Start, echte APK-Icons und die Waydroid-Karte in
+     Einstellungen → Apps. Aufgenommen aus dem Live-ISO in QEMU (Windows, WHPX, Virgl).</p>
+  <div class="metrics">
+    <div class="metric">Android-Boot <b>~40–60 s</b></div>
+    <div class="metric">Aurora installieren <b>4 s</b></div>
+    <div class="metric">App starten <b>3 s</b></div>
+    <div class="metric">Icon-Extraktion <b>800×800 PNG</b></div>
+  </div>
+  <div class="grid">
+    <figure>
+      <img src="aurora-store-window.png" alt="Aurora Store als natives Fenster">
+      <figcaption>Aurora Store läuft als echtes Multi-Window-Fenster auf dem ElvonOS-Desktop
+        (<code>com.aurora.store/.ComposeActivity</code>, <code>mCurrentFocus</code> bestätigt).</figcaption>
+    </figure>
+    <figure>
+      <img src="settings-apps-waydroid.png" alt="Einstellungen Apps mit Waydroid-Karte">
+      <figcaption>Einstellungen → Apps: Status, Speicherverbrauch, Start/Neu starten/Sync/Android-Einstellungen/APK,
+        Autostart, Zwischenablage-/Benachrichtigungs-Bridge, App-Suche und die Android-App-Liste mit echtem
+        APK-Icon, Öffnen, Daten löschen und Deinstallieren.</figcaption>
+    </figure>
+    <figure>
+      <img src="start-menu-android.png" alt="Startmenü mit Android-Kachel">
+      <figcaption>Win8Start mit der neuen <b>Android</b>-Kachel (Metro-Icon, öffnet die Android-App-Liste),
+        Live-Kacheln für Uhr, System und Kalender.</figcaption>
+    </figure>
+    <figure>
+      <img src="metro-window.png" alt="Metro-App-Fenster">
+      <figcaption><b>Metro-App-Fenster</b>: Anwendungen füllen die Oberfläche wie bei Windows 8.1
+        (Einstellungen → Design → App-Fenster → Metro).</figcaption>
+    </figure>
+    <figure>
+      <img src="desktop-window.png" alt="Desktop-Fenster">
+      <figcaption>Gleiche App im <b>Desktop-Modus</b>: normales, verschiebbares Fenster.</figcaption>
+    </figure>
+    <figure>
+      <img src="terminal.png" alt="ElvonOS Terminal">
+      <figcaption><b>ElvonOS Terminal</b>: eigenes PTY-Terminal mit ANSI-Farben, Scrollback, Auswahl/Kopieren und
+        Profilen für Shell und Android (<code>--android</code>).</figcaption>
+    </figure>
+    <figure>
+      <img src="sound-settings.png" alt="Systemtöne in den Einstellungen">
+      <figcaption>Einstellungen → Design: <b>Systemtöne</b> für Anmeldung, Benachrichtigung, Fehler, Fertig und
+        Sperren – jeweils Test, eigene Datei auswählen oder zurücksetzen.</figcaption>
+    </figure>
+    <figure>
+      <img src="system-health.png" alt="Systemzustand in den Einstellungen">
+      <figcaption>Einstellungen → System: die neue Karte <b>Zustand</b> mit Speicher, Datenträger, Auslastung,
+        fehlgeschlagenen Diensten, Waydroid-Status, Clipboard-Bridge und Warnungen (Health-Layer).</figcaption>
+    </figure>
+    <figure>
+      <img src="explorer-android-apps.png" alt="Explorer mit Android-Apps">
+      <figcaption>Explorer im Modus <code>--android-apps</code>: Android-Apps mit Icon, Seitenleiste mit
+        Android-Apps und Android-Speicher (automatisch eingebunden).</figcaption>
+    </figure>
+    <figure>
+      <img src="android-settings-native-window.png" alt="Android Settings als natives Fenster">
+      <figcaption>Android-Einstellungen, nativ über <code>am start</code> gestartet, als Multi-Window-Fenster.</figcaption>
+    </figure>
+  </div>
+</body>
+</html>

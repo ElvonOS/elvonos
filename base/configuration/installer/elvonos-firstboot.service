@@ -1,0 +1,13 @@
+[Unit]
+Description=ElvonOS first-boot software setup
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/elvonos/first-boot.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/elvonos-firstboot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Android
+Name[de]=Android
+Comment=Installed Android apps (Waydroid)
+Comment[de]=Installierte Android-Apps (Waydroid)
+Exec=elvonos-explorer --android-apps
+Icon=/usr/share/icons/elvonos/metro/android.svg
+Type=Application
+Categories=System;Emulator;
+Keywords=android;waydroid;apps;
+StartupNotify=true
+Terminal=false
+X-ElvonOS-Android=true

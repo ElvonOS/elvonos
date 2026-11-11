@@ -1,10 +1,22 @@
 [Unit]
 Description=Waydroid Container
+After=systemd-logind.service
+Wants=systemd-logind.service
 
 [Service]
 UMask=0022
 BusName=id.waydro.Container
+Type=simple
+ExecStartPre=/bin/sh -c 'modprobe binder_linux devices="anbox-binder,anbox-vndbinder,anbox-hwbinder" 2>/dev/null || true'
+ExecStartPre=/bin/sh -c 'test -c /dev/anbox-binder || { echo "Binder devices missing"; exit 1; }'
 ExecStart=/usr/bin/waydroid container start
+ExecStopPost=/bin/sh -c 'pkill -f waydroid-net.sh 2>/dev/null || true'
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+TimeoutStartSec=120
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

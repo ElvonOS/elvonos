@@ -12,6 +12,28 @@
 
 # Android images are external artifacts (2.3 GB); verify by SHA256 instead of committing
 Android/Waydroid-images/*.img
+# Third-party APKs (Aurora/GMS/vending) are downloaded at build time
+Android/waydroid-apps/
+*.apk
+
+# Vendored crates and generated Waydroid build output
+base/configuration/waydroid-rs/vendor/
+base/configuration/waydroid-rs/target/
+# Generated Win8DE build tree and binaries (patches + sources are tracked)
+build/win8de/work/
+build/win8de/bin/
+build/win8de/base/
+# Vendor source snapshots (upstream is pinned in documentation/16)
+Win8DE-0.9.0beta2/
+Win8Start/
+
+# Local caches, keys and logs
+.cache/
+*.log
+*.key
+*.tar.zst
+*.qcow2
+*.ppm
 
 # Compiled artifacts
 target/
@@ -23,3 +45,10 @@ CMakeFiles/
 *.a
 __pycache__/
 *.pyc
+
+# Windows metadata and local leftovers
+*:Zone.Identifier
+/fix_install.py
+/home/
+/wallpaper.png
+base/configuration/desktop-shell/build/

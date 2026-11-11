@@ -1,0 +1,2094 @@
+diff --git a/list-windows/main.cpp b/list-windows/main.cpp
+--- a/list-windows/main.cpp
++++ b/list-windows/main.cpp
+@@ -49,9 +49,11 @@
+   bool focused = false;
+   bool minimized = false;
+   bool maximized = false;
++  uint32_t id = 0;
+ };
+ 
+ std::map<zwlr_foreign_toplevel_handle_v1 *, WindowInfo> windows;
++uint32_t next_window_id = 1;
+ 
+ // ------------------------------------------------------------
+ // Helper: find icon from app_id
+@@ -187,6 +189,7 @@
+     }
+ 
+     settings.beginGroup(QString::number(index++));
++    settings.setValue("ID", static_cast<qulonglong>(win.id));
+     settings.setValue("Title", QString::fromStdString(win.title));
+     settings.setValue("AppID", QString::fromStdString(win.app_id));
+     settings.setValue("Icon", QString::fromStdString(win.icon_name)); // new
+@@ -241,10 +244,16 @@
+     return;
+ 
+   QString actionStr = trimmedCmd.left(firstSpace).toLower();
+-  QString title = trimmedCmd.mid(firstSpace + 1).trimmed();
+-  if (title.isEmpty())
++  QString target = trimmedCmd.mid(firstSpace + 1).trimmed();
++  if (target.isEmpty())
+     return;
+ 
++  // Commands can address a window either by title (legacy) or by the
++  // stable numeric ID that is also written to windows.ini.
++  const bool byId = actionStr.endsWith("-id");
++  const QString baseAction =
++      byId ? actionStr.left(actionStr.size() - 3) : actionStr;
++
+   // Map of allowed actions
+   enum class Action { Activate, Minimize, Maximize, Unmaximize, Close, ActivateOnly };
+   static const std::map<QString, Action> actionMap = {
+@@ -255,16 +264,29 @@
+       {"unmaximize", Action::Unmaximize},
+       {"close", Action::Close}};
+ 
+-  auto it = actionMap.find(actionStr);
++  auto it = actionMap.find(baseAction);
+   if (it == actionMap.end())
+     return; // unknown action
+ 
+   // Find the window
+   zwlr_foreign_toplevel_handle_v1 *targetHandle = nullptr;
+-  for (auto &[handle, win] : windows) {
+-    if (QString::fromStdString(win.title) == title) {
+-      targetHandle = handle;
+-      break;
++  if (byId) {
++    bool ok = false;
++    const uint32_t wanted = target.toUInt(&ok);
++    if (!ok)
++      return;
++    for (auto &[handle, win] : windows) {
++      if (win.id == wanted) {
++        targetHandle = handle;
++        break;
++      }
++    }
++  } else {
++    for (auto &[handle, win] : windows) {
++      if (QString::fromStdString(win.title) == target) {
++        targetHandle = handle;
++        break;
++      }
+     }
+   }
+   if (!targetHandle)
+@@ -273,7 +295,7 @@
+   // Execute action
+   switch (it->second) {
+     case Action::Activate:
+-      if (is_hyprland() && hyprland_focus_window(title)) {
++      if (is_hyprland() && hyprland_focus_window(target)) {
+         return;
+       }
+       if (seat)
+@@ -293,10 +315,10 @@
+     zwlr_foreign_toplevel_handle_v1_close(targetHandle);
+     break;
+   case Action::ActivateOnly:
+-    if (is_hyprland() && hyprland_focus_window(title)) {
++    if (is_hyprland() && hyprland_focus_window(target)) {
+       return;
+     }
+-    activate_only(title);
++    activate_only(target);
+     return;
+     
+   }
+@@ -369,7 +391,9 @@
+ // ------------------------------------------------------------
+ static void manager_handle_toplevel(void *, zwlr_foreign_toplevel_manager_v1 *,
+                                     zwlr_foreign_toplevel_handle_v1 *handle) {
+-  windows.emplace(handle, WindowInfo());
++  WindowInfo info;
++  info.id = next_window_id++;
++  windows.emplace(handle, info);
+   zwlr_foreign_toplevel_handle_v1_add_listener(
+       handle, &toplevel_handle_listener, nullptr);
+   dirty = true;
+@@ -426,7 +450,13 @@
+           << "  --maximize TITLE     Maximize the window with the given TITLE\n"
+           << "  --unmaximize TITLE   Unmaximize the window with the given "
+              "TITLE\n"
+-          << "  --close TITLE        Close the window with the given TITLE\n\n"
++          << "  --close TITLE        Close the window with the given TITLE\n"
++          << "  --activate-id ID     Activate the window with the numeric ID\n"
++          << "  --activate-only-id ID  Activate the window and minimize the others\n"
++          << "  --minimize-id ID     Minimize the window with the numeric ID\n"
++          << "  --maximize-id ID     Maximize the window with the numeric ID\n"
++          << "  --unmaximize-id ID   Unmaximize the window with the numeric ID\n"
++          << "  --close-id ID        Close the window with the numeric ID\n\n"
+           << "Run without arguments to start the daemon.\n";
+       return 0;
+     }
+@@ -452,6 +482,18 @@
+       cmd = "close " + title;
+     if (flag == "--activate-only")
+       cmd = "activate-only " + title;
++    if (flag == "--activate-id")
++      cmd = "activate-id " + title;
++    if (flag == "--activate-only-id")
++      cmd = "activate-only-id " + title;
++    if (flag == "--minimize-id")
++      cmd = "minimize-id " + title;
++    if (flag == "--maximize-id")
++      cmd = "maximize-id " + title;
++    if (flag == "--unmaximize-id")
++      cmd = "unmaximize-id " + title;
++    if (flag == "--close-id")
++      cmd = "close-id " + title;
+ 
+     if (!cmd.isEmpty()) {
+       QLocalSocket sock;
+diff --git a/Win8Running/main.cpp b/Win8Running/main.cpp
+--- a/Win8Running/main.cpp
++++ b/Win8Running/main.cpp
+@@ -1,5 +1,6 @@
+ #include <QGuiApplication>
+ #include <QQmlApplicationEngine>
++#include <QQmlComponent>
+ #include <QQmlContext>
+ #include <QQuickWindow>
+ #include <QAbstractListModel>
+@@ -8,75 +9,520 @@
+ #include <QDir>
+ #include <QFileSystemWatcher>
+ #include <QFile>
++#include <QFileInfo>
+ #include <QLocalServer>
+ #include <QLocalSocket>
+-#include <QFileInfo>
+-#include <LayerShellQt/window.h>
+ #include <QTimer>
+-
++#include <QJsonDocument>
++#include <QJsonObject>
++#include <QRegularExpression>
++#include <QScreen>
+ #include <QStandardPaths>
+ 
++#include <LayerShellQt/window.h>
++
+ /* ---------------- Program Launcher ---------------- */
+ 
+ class Launcher : public QObject {
+     Q_OBJECT
+ public:
+     explicit Launcher(QObject *parent = nullptr) : QObject(parent) {}
+-    
++
+     Q_INVOKABLE bool launch(const QString &program,
+                             const QStringList &arguments = {}) {
+         return QProcess::startDetached(program, arguments);
+     }
+-    
++
+     Q_INVOKABLE bool launchDetached(const QString &commandLine) {
+-        // Allows: "alacritty -e htop"
+         return QProcess::startDetached(commandLine);
+     }
+-    
++
+     Q_INVOKABLE bool launchInShell(const QString &command) {
+-        return QProcess::startDetached(
+-            "/bin/sh",
+-            {"-c", command}
+-        );
++        return QProcess::startDetached("/bin/sh", {"-c", command});
++    }
++
++    // Launch the first available program from a list of candidates.
++    Q_INVOKABLE bool launchFirst(const QStringList &candidates,
++                                 const QStringList &arguments = {}) {
++        for (const QString &candidate : candidates) {
++            const QString executable = QStandardPaths::findExecutable(candidate);
++            if (!executable.isEmpty())
++                return QProcess::startDetached(executable, arguments);
++        }
++        return false;
++    }
++};
++
++namespace {
++
++QString resolveThemeIcon(const QString &name)
++{
++    if (name.isEmpty())
++        return {};
++    const QStringList dirs = {
++        QStringLiteral("/usr/share/icons/Papirus/24x24/panel"),
++        QStringLiteral("/usr/share/icons/Papirus/24x24/actions"),
++        QStringLiteral("/usr/share/icons/Papirus/24x24/status"),
++        QStringLiteral("/usr/share/icons/Papirus/24x24/devices"),
++        QStringLiteral("/usr/share/icons/Papirus/48x48/panel"),
++        QStringLiteral("/usr/share/icons/Papirus/48x48/status"),
++        QStringLiteral("/usr/share/icons/Papirus/48x48/devices"),
++        QStringLiteral("/usr/share/icons/Papirus/48x48/apps"),
++        QStringLiteral("/usr/share/icons/Papirus/48x48/actions"),
++        QStringLiteral("/usr/share/icons/Papirus/64x64/panel"),
++        QStringLiteral("/usr/share/icons/Papirus/64x64/status"),
++        QStringLiteral("/usr/share/icons/Papirus/64x64/devices"),
++        QStringLiteral("/usr/share/icons/Papirus/64x64/apps"),
++        QStringLiteral("/usr/share/icons/hicolor/scalable/status"),
++        QStringLiteral("/usr/share/icons/hicolor/scalable/devices"),
++        QStringLiteral("/usr/share/icons/hicolor/scalable/apps"),
++        QStringLiteral("/usr/share/icons/hicolor/48x48/status"),
++        QStringLiteral("/usr/share/icons/hicolor/48x48/devices"),
++        QStringLiteral("/usr/share/icons/hicolor/48x48/apps"),
++        QStringLiteral("/usr/share/icons/Adwaita/48x48/status"),
++        QStringLiteral("/usr/share/icons/Adwaita/48x48/devices"),
++        QStringLiteral("/usr/share/icons/Adwaita/48x48/apps"),
++        QStringLiteral("/usr/share/pixmaps"),
++    };
++    for (const QString &dir : dirs) {
++        for (const QString &suffix : {QStringLiteral(".svg"), QStringLiteral(".png")}) {
++            const QString path = dir + QLatin1Char('/') + name + suffix;
++            if (QFile::exists(path))
++                return QUrl::fromLocalFile(path).toString();
++        }
++    }
++    return {};
++}
++
++QString readTextFile(const QString &path)
++{
++    QFile file(path);
++    if (!file.open(QIODevice::ReadOnly))
++        return {};
++    return QString::fromUtf8(file.readAll()).trimmed();
++}
++
++QString runText(const QString &program, const QStringList &arguments,
++                int timeoutMs = 1200)
++{
++    QProcess process;
++    process.start(program, arguments);
++    if (!process.waitForFinished(timeoutMs))
++        return {};
++    return QString::fromUtf8(process.readAllStandardOutput()).trimmed();
++}
++
++} // namespace
++
++/* ---------------- Taskbar settings ---------------- */
++
++class TaskbarSettings : public QObject {
++    Q_OBJECT
++    Q_PROPERTY(int height READ height NOTIFY heightChanged)
++    Q_PROPERTY(bool groupDuplicates READ groupDuplicates NOTIFY groupDuplicatesChanged)
++    Q_PROPERTY(bool showTray READ showTray NOTIFY showTrayChanged)
++    Q_PROPERTY(bool showVolume READ showVolume NOTIFY showVolumeChanged)
++    Q_PROPERTY(bool showNetwork READ showNetwork NOTIFY showNetworkChanged)
++    Q_PROPERTY(bool showBattery READ showBattery NOTIFY showBatteryChanged)
++    Q_PROPERTY(bool showClock READ showClock NOTIFY showClockChanged)
++    Q_PROPERTY(bool showCount READ showCount NOTIFY showCountChanged)
++    Q_PROPERTY(bool showTitles READ showTitles NOTIFY showTitlesChanged)
++
++public:
++    explicit TaskbarSettings(QObject *parent = nullptr)
++        : QObject(parent)
++    {
++        m_path = QDir::homePath() + QStringLiteral("/.config/elvonos/taskbar.json");
++        QDir().mkpath(QFileInfo(m_path).absolutePath());
++        reload();
++
++        m_watcher.addPath(QFileInfo(m_path).absolutePath());
++        if (QFileInfo::exists(m_path))
++            m_watcher.addPath(m_path);
++
++        m_reloadTimer.setSingleShot(true);
++        m_reloadTimer.setInterval(250);
++        connect(&m_reloadTimer, &QTimer::timeout, this, &TaskbarSettings::reload);
++        connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, [this] {
++            if (!m_watcher.files().contains(m_path) && QFileInfo::exists(m_path))
++                m_watcher.addPath(m_path);
++            m_reloadTimer.start();
++        });
++        connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this] {
++            if (!m_watcher.files().contains(m_path) && QFileInfo::exists(m_path))
++                m_watcher.addPath(m_path);
++            m_reloadTimer.start();
++        });
+     }
++
++    int height() const { return m_height; }
++    bool groupDuplicates() const { return m_groupDuplicates; }
++    bool showTray() const { return m_showTray; }
++    bool showVolume() const { return m_showVolume; }
++    bool showNetwork() const { return m_showNetwork; }
++    bool showBattery() const { return m_showBattery; }
++    bool showClock() const { return m_showClock; }
++    bool showCount() const { return m_showCount; }
++    bool showTitles() const { return m_showTitles; }
++
++public slots:
++    void reload()
++    {
++        QJsonObject object;
++        QFile file(m_path);
++        if (file.open(QIODevice::ReadOnly)) {
++            const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
++            object = document.object();
++        }
++
++        const int height = qBound(44, object.value(QStringLiteral("height"))
++                                          .toInt(54), 72);
++        if (height != m_height) {
++            m_height = height;
++            emit heightChanged();
++        }
++        auto applyBool = [this, &object](const QString &key, bool defaultValue,
++                                         bool &member, void (TaskbarSettings::*signal)()) {
++            const bool value = object.value(key).toBool(defaultValue);
++            if (value != member) {
++                member = value;
++                emit (this->*signal)();
++            }
++        };
++        applyBool(QStringLiteral("groupDuplicates"), true, m_groupDuplicates,
++                  &TaskbarSettings::groupDuplicatesChanged);
++        applyBool(QStringLiteral("showTray"), true, m_showTray,
++                  &TaskbarSettings::showTrayChanged);
++        applyBool(QStringLiteral("showVolume"), true, m_showVolume,
++                  &TaskbarSettings::showVolumeChanged);
++        applyBool(QStringLiteral("showNetwork"), true, m_showNetwork,
++                  &TaskbarSettings::showNetworkChanged);
++        applyBool(QStringLiteral("showBattery"), true, m_showBattery,
++                  &TaskbarSettings::showBatteryChanged);
++        applyBool(QStringLiteral("showClock"), true, m_showClock,
++                  &TaskbarSettings::showClockChanged);
++        applyBool(QStringLiteral("showCount"), true, m_showCount,
++                  &TaskbarSettings::showCountChanged);
++        applyBool(QStringLiteral("showTitles"), true, m_showTitles,
++                  &TaskbarSettings::showTitlesChanged);
++    }
++
++signals:
++    void heightChanged();
++    void groupDuplicatesChanged();
++    void showTrayChanged();
++    void showVolumeChanged();
++    void showNetworkChanged();
++    void showBatteryChanged();
++    void showClockChanged();
++    void showCountChanged();
++    void showTitlesChanged();
++
++private:
++    QString m_path;
++    QFileSystemWatcher m_watcher;
++    QTimer m_reloadTimer;
++    int m_height = 54;
++    bool m_groupDuplicates = true;
++    bool m_showTray = true;
++    bool m_showVolume = true;
++    bool m_showNetwork = true;
++    bool m_showBattery = true;
++    bool m_showClock = true;
++    bool m_showCount = true;
++    bool m_showTitles = true;
+ };
+ 
++/* ---------------- Tray status ---------------- */
++
++class TrayStatus : public QObject {
++    Q_OBJECT
++    Q_PROPERTY(bool volumeAvailable READ volumeAvailable NOTIFY trayChanged)
++    Q_PROPERTY(int volumePercent READ volumePercent NOTIFY trayChanged)
++    Q_PROPERTY(bool volumeMuted READ volumeMuted NOTIFY trayChanged)
++    Q_PROPERTY(QString volumeIcon READ volumeIcon NOTIFY trayChanged)
++    Q_PROPERTY(QString volumeTip READ volumeTip NOTIFY trayChanged)
++    Q_PROPERTY(bool networkAvailable READ networkAvailable NOTIFY trayChanged)
++    Q_PROPERTY(bool networkOnline READ networkOnline NOTIFY trayChanged)
++    Q_PROPERTY(QString networkName READ networkName NOTIFY trayChanged)
++    Q_PROPERTY(QString networkIcon READ networkIcon NOTIFY trayChanged)
++    Q_PROPERTY(QString networkTip READ networkTip NOTIFY trayChanged)
++    Q_PROPERTY(bool batteryPresent READ batteryPresent NOTIFY trayChanged)
++    Q_PROPERTY(int batteryPercent READ batteryPercent NOTIFY trayChanged)
++    Q_PROPERTY(bool batteryCharging READ batteryCharging NOTIFY trayChanged)
++    Q_PROPERTY(QString batteryIcon READ batteryIcon NOTIFY trayChanged)
++    Q_PROPERTY(QString batteryTip READ batteryTip NOTIFY trayChanged)
++
++public:
++    explicit TrayStatus(QObject *parent = nullptr)
++        : QObject(parent)
++    {
++        refresh();
++        auto *timer = new QTimer(this);
++        timer->setInterval(15000);
++        connect(timer, &QTimer::timeout, this, &TrayStatus::refresh);
++        timer->start();
++    }
++
++    bool volumeAvailable() const { return true; }
++    int volumePercent() const { return m_volumePercent; }
++    bool volumeMuted() const { return m_volumeMuted; }
++    QString volumeIcon() const { return m_volumeIcon; }
++    QString volumeTip() const { return m_volumeTip; }
++    bool networkAvailable() const { return true; }
++    bool networkOnline() const { return m_networkOnline; }
++    QString networkName() const { return m_networkName; }
++    QString networkIcon() const { return m_networkIcon; }
++    QString networkTip() const { return m_networkTip; }
++    bool batteryPresent() const { return m_batteryPresent; }
++    int batteryPercent() const { return m_batteryPercent; }
++    bool batteryCharging() const { return m_batteryCharging; }
++    QString batteryIcon() const { return m_batteryIcon; }
++    QString batteryTip() const { return m_batteryTip; }
+ 
+-/* ---------------- Window Item ---------------- */
++public slots:
++    void refresh()
++    {
++        refreshVolume();
++        refreshNetwork();
++        refreshBattery();
++        emit trayChanged();
++    }
++
++signals:
++    void trayChanged();
++
++private:
++    void refreshVolume()
++    {
++        int percent = 0;
++        bool muted = false;
++        bool found = false;
++
++        const QString wireplumber =
++            runText(QStringLiteral("wpctl"),
++                    {QStringLiteral("get-volume"), QStringLiteral("@DEFAULT_AUDIO_SINK@")});
++        QRegularExpression re(QStringLiteral("Volume:\\s*([0-9]+(?:[.,][0-9]+)?)"));
++        const QRegularExpressionMatch match = re.match(wireplumber);
++        if (match.hasMatch()) {
++            percent = qRound(match.captured(1).replace(QLatin1Char(','), QLatin1Char('.'))
++                                 .toDouble() * 100.0);
++            muted = wireplumber.contains(QStringLiteral("[MUTED]"));
++            found = true;
++        } else {
++            const QString pulse = runText(QStringLiteral("pactl"),
++                                          {QStringLiteral("get-sink-volume"),
++                                           QStringLiteral("@DEFAULT_SINK@")});
++            const QRegularExpressionMatch pulseMatch =
++                QRegularExpression(QStringLiteral("(\\d+)%")).match(pulse);
++            if (pulseMatch.hasMatch()) {
++                percent = pulseMatch.captured(1).toInt();
++                const QString mute = runText(QStringLiteral("pactl"),
++                                             {QStringLiteral("get-sink-mute"),
++                                              QStringLiteral("@DEFAULT_SINK@")});
++                muted = mute.contains(QStringLiteral("yes"), Qt::CaseInsensitive);
++                found = true;
++            }
++        }
++
++        const int clamped = qBound(0, percent, 100);
++        QString icon;
++        if (!found || muted)
++            icon = QStringLiteral("audio-volume-muted");
++        else if (clamped <= 30)
++            icon = QStringLiteral("audio-volume-low");
++        else if (clamped <= 70)
++            icon = QStringLiteral("audio-volume-medium");
++        else
++            icon = QStringLiteral("audio-volume-high");
++
++        m_volumePercent = clamped;
++        m_volumeMuted = muted;
++        m_volumeIcon = resolveThemeIcon(icon);
++        m_volumeTip = !found ? QStringLiteral("Audio sink unavailable")
++                             : (muted ? QStringLiteral("Muted · %1%").arg(clamped)
++                                      : QStringLiteral("Volume %1%").arg(clamped));
++    }
++
++    void refreshNetwork()
++    {
++        bool online = false;
++        bool wireless = false;
++        QString name;
++
++        const QString state =
++            runText(QStringLiteral("nmcli"),
++                    {QStringLiteral("-t"), QStringLiteral("-f"),
++                     QStringLiteral("STATE"), QStringLiteral("general")});
++        if (state.startsWith(QStringLiteral("connected"))) {
++            online = true;
++            const QString wifi =
++                runText(QStringLiteral("nmcli"),
++                        {QStringLiteral("-t"), QStringLiteral("-f"),
++                         QStringLiteral("ACTIVE,SSID"), QStringLiteral("dev"),
++                         QStringLiteral("wifi")},
++                        1500);
++            for (const QString &line : wifi.split(QLatin1Char('\n'))) {
++                if (line.startsWith(QStringLiteral("yes:"))) {
++                    name = line.mid(4).trimmed();
++                    wireless = true;
++                    break;
++                }
++            }
++            if (name.isEmpty()) {
++                const QString connection =
++                    runText(QStringLiteral("nmcli"),
++                            {QStringLiteral("-t"), QStringLiteral("-f"),
++                             QStringLiteral("NAME"), QStringLiteral("connection"),
++                             QStringLiteral("show"), QStringLiteral("--active")});
++                name = connection.split(QLatin1Char('\n')).value(0).trimmed();
++            }
++        }
++
++        if (!online) {
++            const QDir netDir(QStringLiteral("/sys/class/net"));
++            for (const QString &entry :
++                 netDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
++                if (entry == QStringLiteral("lo"))
++                    continue;
++                const QString oper =
++                    readTextFile(netDir.filePath(entry) + QStringLiteral("/operstate"));
++                if (oper == QStringLiteral("up")) {
++                    online = true;
++                    name = entry;
++                    wireless = QFileInfo::exists(
++                        netDir.filePath(entry) + QStringLiteral("/wireless"));
++                    break;
++                }
++            }
++        }
++
++        m_networkOnline = online;
++        m_networkName = name;
++        if (!online) {
++            m_networkIcon = resolveThemeIcon(QStringLiteral("network-offline"));
++            m_networkTip = QStringLiteral("Network: offline");
++        } else if (wireless) {
++            m_networkIcon =
++                resolveThemeIcon(QStringLiteral("network-wireless-signal-excellent"));
++            if (m_networkIcon.isEmpty())
++                m_networkIcon = resolveThemeIcon(QStringLiteral("network-wireless"));
++            m_networkTip = QStringLiteral("Wi-Fi: %1").arg(name);
++        } else {
++            m_networkIcon = resolveThemeIcon(QStringLiteral("network-wired"));
++            m_networkTip = QStringLiteral("Network: %1").arg(name);
++        }
++    }
++
++    void refreshBattery()
++    {
++        bool present = false;
++        int percent = 0;
++        bool charging = false;
++
++        const QDir powerDir(QStringLiteral("/sys/class/power_supply"));
++        for (const QString &entry :
++             powerDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
++            const QString base = powerDir.filePath(entry);
++            if (readTextFile(base + QStringLiteral("/type")) != QStringLiteral("Battery"))
++                continue;
++            present = true;
++            percent = readTextFile(base + QStringLiteral("/capacity")).toInt();
++            const QString status = readTextFile(base + QStringLiteral("/status"));
++            charging = status == QStringLiteral("Charging")
++                       || status == QStringLiteral("Full");
++            break;
++        }
++
++        QString icon;
++        if (!present)
++            icon = QStringLiteral("battery-missing");
++        else if (charging)
++            icon = QStringLiteral("battery-%1-charging").arg(percent >= 90 ? 100
++                                                            : (percent / 10) * 10);
++        else if (percent >= 80)
++            icon = QStringLiteral("battery-full");
++        else if (percent >= 40)
++            icon = QStringLiteral("battery-good");
++        else if (percent >= 15)
++            icon = QStringLiteral("battery-low");
++        else
++            icon = QStringLiteral("battery-caution");
++
++        m_batteryPresent = present;
++        m_batteryPercent = qBound(0, percent, 100);
++        m_batteryCharging = charging;
++        m_batteryIcon = resolveThemeIcon(icon);
++        m_batteryTip = !present ? QStringLiteral("No battery")
++                                : (charging
++                                   ? QStringLiteral("Battery %1% · charging").arg(percent)
++                                   : QStringLiteral("Battery %1%").arg(percent));
++    }
++
++    int m_volumePercent = 0;
++    bool m_volumeMuted = false;
++    QString m_volumeIcon;
++    QString m_volumeTip = QStringLiteral("Volume");
++    bool m_networkOnline = false;
++    QString m_networkName;
++    QString m_networkIcon;
++    QString m_networkTip = QStringLiteral("Network");
++    bool m_batteryPresent = false;
++    int m_batteryPercent = 0;
++    bool m_batteryCharging = false;
++    QString m_batteryIcon;
++    QString m_batteryTip = QStringLiteral("Battery");
++};
++
++/* ---------------- Window items and groups ---------------- */
+ 
+ struct WindowItem {
++    uint id = 0;
+     QString appId;
+     QString title;
+     QString iconName;
+     QString iconPath;
+-    bool focused;
+-    bool maximized;
+-    bool minimized;
++    bool focused = false;
++    bool maximized = false;
++    bool minimized = false;
++};
++
++struct WindowGroup {
++    QString appId;
++    QString title;
++    QString iconPath;
++    QList<int> members;
++    bool focused = false;
++    bool maximized = false;
++    bool minimized = false;
+ };
+ 
+ /* ---------------- Window Model ---------------- */
+ 
+ class WindowModel : public QAbstractListModel {
+     Q_OBJECT
++    Q_PROPERTY(int windowCount READ windowCount NOTIFY windowCountChanged)
++
+ public:
+     enum Roles {
+-        AppIdRole = Qt::UserRole + 1,
++        IdRole = Qt::UserRole + 1,
++        AppIdRole,
+         TitleRole,
+         FocusedRole,
+         MaximizedRole,
+         MinimizedRole,
+-        IconPathRole
++        IconPathRole,
++        CountRole,
++        MemberIdsRole,
++        MemberTitlesRole
+     };
+ 
+-    WindowModel(QObject *parent = nullptr)
+-    : QAbstractListModel(parent)
++    explicit WindowModel(TaskbarSettings *settings, QObject *parent = nullptr)
++        : QAbstractListModel(parent), m_settings(settings)
+     {
+         iniPath = QDir::homePath() + "/.config/list-windows/windows.ini";
+         load();
+ 
+-        // list-windows and Win8Running start in parallel. The INI file usually
+-        // does not exist yet when this model is constructed, so also watch the
+-        // directory and retry once the daemon has written the initial list.
+         watcher.addPath(QFileInfo(iniPath).absolutePath());
+         if (QFileInfo::exists(iniPath))
+             watcher.addPath(iniPath);
+@@ -96,113 +542,242 @@
+                 watcher.addPath(iniPath);
+             reload();
+         });
+-    }
+ 
+-    int rowCount(const QModelIndex &) const override {
+-        return static_cast<int>(windows.size());
++        connect(m_settings, &TaskbarSettings::groupDuplicatesChanged, this, [this] {
++            beginResetModel();
++            rebuildGroups();
++            endResetModel();
++        });
+     }
+ 
+-    QVariant data(const QModelIndex &index, int role) const override {
+-        if (!index.isValid()) return {};
+-        const auto &w = windows[index.row()];
++    int windowCount() const { return static_cast<int>(m_windows.size()); }
+ 
++    int rowCount(const QModelIndex &) const override
++    {
++        return static_cast<int>(m_groups.size());
++    }
++
++    QVariant data(const QModelIndex &index, int role) const override
++    {
++        if (!index.isValid() || index.row() < 0 || index.row() >= m_groups.size())
++            return {};
++        const WindowGroup &group = m_groups.at(index.row());
+         switch (role) {
+-            case AppIdRole: return w.appId;
+-            case TitleRole: return w.title;
+-            case FocusedRole: return w.focused;
+-            case MaximizedRole: return w.maximized;
+-            case MinimizedRole: return w.minimized;
+-            case IconPathRole: return w.iconPath;
++        case IdRole:
++            return group.members.isEmpty()
++                       ? 0 : static_cast<int>(m_windows.at(group.members.first()).id);
++        case AppIdRole:
++            return group.appId;
++        case TitleRole:
++            return group.title;
++        case FocusedRole:
++            return group.focused;
++        case MaximizedRole:
++            return group.maximized;
++        case MinimizedRole:
++            return group.minimized;
++        case IconPathRole:
++            return group.iconPath;
++        case CountRole:
++            return group.members.size();
++        case MemberIdsRole: {
++            QVariantList ids;
++            for (int member : group.members)
++                ids.append(static_cast<int>(m_windows.at(member).id));
++            return ids;
++        }
++        case MemberTitlesRole: {
++            QStringList titles;
++            for (int member : group.members)
++                titles.append(m_windows.at(member).title);
++            return titles;
++        }
++        default:
++            return {};
+         }
+-        return {};
+     }
+ 
+-    QHash<int, QByteArray> roleNames() const override {
++    QHash<int, QByteArray> roleNames() const override
++    {
+         return {
++            {IdRole, "windowId"},
+             {AppIdRole, "appId"},
+             {TitleRole, "title"},
+             {FocusedRole, "focused"},
+             {MaximizedRole, "maximized"},
+             {MinimizedRole, "minimized"},
+-            {IconPathRole, "iconPath"}
++            {IconPathRole, "iconPath"},
++            {CountRole, "count"},
++            {MemberIdsRole, "memberIds"},
++            {MemberTitlesRole, "memberTitles"},
+         };
+     }
+ 
+-    Q_INVOKABLE void reload() {
++    Q_INVOKABLE void reload()
++    {
+         beginResetModel();
+-        windows.clear();
++        m_windows.clear();
+         load();
++        rebuildGroups();
+         endResetModel();
++        emit windowCountChanged();
+     }
+ 
+-    Q_INVOKABLE void activate(int i) {
+-        if (i < 0 || i >= windows.size()) return;
+-        run({"--activate", windows[i].title});
++    // Cycle through duplicate windows when a group is focused, otherwise
++    // activate the focused (or first) member.
++    Q_INVOKABLE void activate(int row)
++    {
++        const WindowGroup *group = groupAt(row);
++        if (!group || group->members.isEmpty())
++            return;
++        int member = group->members.first();
++        if (group->members.size() > 1) {
++            int focusedPosition = -1;
++            for (int i = 0; i < group->members.size(); ++i) {
++                if (m_windows.at(group->members.at(i)).focused) {
++                    focusedPosition = i;
++                    break;
++                }
++            }
++            if (focusedPosition >= 0)
++                member = group->members.at((focusedPosition + 1) % group->members.size());
++        } else {
++            member = targetMember(*group);
++        }
++        runWindow(QStringLiteral("activate"), m_windows.at(member));
+         emit requestKeyboardRelease();
+     }
+ 
+-    Q_INVOKABLE void activateOnly(int i) {
+-        if (i < 0 || i >= windows.size()) return;
+-        run({"--activate-only", windows[i].title});
++    Q_INVOKABLE void activateOnly(int row)
++    {
++        const WindowGroup *group = groupAt(row);
++        if (!group || group->members.isEmpty())
++            return;
++        runWindow(QStringLiteral("activate-only"),
++                  m_windows.at(targetMember(*group)));
+         emit requestKeyboardRelease();
+     }
+ 
+-    Q_INVOKABLE void minimize(int i) {
+-        if (i < 0 || i >= windows.size()) return;
+-        run({"--minimize", windows[i].title});
++    Q_INVOKABLE void minimize(int row)
++    {
++        const WindowGroup *group = groupAt(row);
++        if (!group || group->members.isEmpty())
++            return;
++        runWindow(QStringLiteral("minimize"), m_windows.at(targetMember(*group)));
+     }
+ 
+-    Q_INVOKABLE void maximize(int i) {
+-        if (i < 0 || i >= windows.size()) return;
+-        run({"--maximize", windows[i].title});
++    Q_INVOKABLE void maximize(int row)
++    {
++        const WindowGroup *group = groupAt(row);
++        if (!group || group->members.isEmpty())
++            return;
++        runWindow(QStringLiteral("maximize"), m_windows.at(targetMember(*group)));
+         emit requestKeyboardRelease();
+     }
+ 
+-    Q_INVOKABLE void unmaximize(int i) {
+-        if (i < 0 || i >= windows.size()) return;
+-        run({"--unmaximize", windows[i].title});
++    Q_INVOKABLE void unmaximize(int row)
++    {
++        const WindowGroup *group = groupAt(row);
++        if (!group || group->members.isEmpty())
++            return;
++        runWindow(QStringLiteral("unmaximize"), m_windows.at(targetMember(*group)));
+         emit requestKeyboardRelease();
+     }
+ 
+-    Q_INVOKABLE void close(int i) {
+-        if (i < 0 || i >= windows.size()) return;
+-        run({"--close", windows[i].title});
++    Q_INVOKABLE void close(int row)
++    {
++        const WindowGroup *group = groupAt(row);
++        if (!group || group->members.isEmpty())
++            return;
++        runWindow(QStringLiteral("close"), m_windows.at(targetMember(*group)));
+     }
+ 
+-    Q_INVOKABLE void minimizeAll() {
+-        for (const auto &w : windows)
+-            run({"--minimize", w.title});
+-    }
+-    
+-    Q_INVOKABLE int indexOfFocused() const {
+-        for (int i = 0; i < windows.size(); ++i) {
+-            if (windows[i].focused)
+-                return i;
++    Q_INVOKABLE void closeAll(int row)
++    {
++        const WindowGroup *group = groupAt(row);
++        if (!group)
++            return;
++        for (int member : group->members)
++            runWindow(QStringLiteral("close"), m_windows.at(member));
++    }
++
++    Q_INVOKABLE void minimizeAll()
++    {
++        for (const WindowItem &window : m_windows)
++            runWindow(QStringLiteral("minimize"), window);
++    }
++
++    Q_INVOKABLE int indexOfFocused() const
++    {
++        for (int row = 0; row < m_groups.size(); ++row) {
++            if (m_groups.at(row).focused)
++                return row;
+         }
+         return -1;
+     }
+-    
++
++    Q_INVOKABLE QVariantMap groupInfo(int row) const
++    {
++        QVariantMap result;
++        const WindowGroup *group = groupAt(row);
++        if (!group)
++            return result;
++        result.insert(QStringLiteral("title"), group->title);
++        result.insert(QStringLiteral("appId"), group->appId);
++        result.insert(QStringLiteral("count"), group->members.size());
++        result.insert(QStringLiteral("focused"), group->focused);
++        result.insert(QStringLiteral("maximized"), group->maximized);
++        result.insert(QStringLiteral("minimized"), group->minimized);
++        QStringList titles;
++        QVariantList ids;
++        for (int member : group->members) {
++            titles.append(m_windows.at(member).title);
++            ids.append(static_cast<int>(m_windows.at(member).id));
++        }
++        result.insert(QStringLiteral("titles"), titles);
++        result.insert(QStringLiteral("ids"), ids);
++        return result;
++    }
++
++signals:
++    void requestKeyboardRelease();
++    void windowCountChanged();
+ 
+ private:
+-    QList<WindowItem> windows;
+-    QFileSystemWatcher watcher;
+-    QString iniPath;
++    const WindowGroup *groupAt(int row) const
++    {
++        if (row < 0 || row >= m_groups.size())
++            return nullptr;
++        return &m_groups.at(row);
++    }
++
++    int targetMember(const WindowGroup &group) const
++    {
++        for (int member : group.members) {
++            if (m_windows.at(member).focused)
++                return member;
++        }
++        return group.members.first();
++    }
+ 
+-    void load() {
++    void load()
++    {
+         QSettings ini(iniPath, QSettings::IniFormat);
+-         
++
+         QStringList groups = ini.childGroups();
+-          
+-        // 🔹 Sort groups numerically: "1", "2", "10" (not lexicographically)
+         std::sort(groups.begin(), groups.end(),
+                   [](const QString &a, const QString &b) {
+                       return a.toInt() < b.toInt();
+                   });
+-                   
++
++        int fallbackId = 100000;
+         for (const QString &group : groups) {
+             ini.beginGroup(group);
+ 
+             WindowItem w;
++            w.id        = ini.value("ID", 0).toUInt();
++            if (w.id == 0)
++                w.id = static_cast<uint>(fallbackId++);
+             w.appId     = ini.value("AppID").toString();
+             w.title     = ini.value("Title").toString();
+             w.focused   = ini.value("Focused").toBool();
+@@ -216,80 +791,125 @@
+             else
+                 w.iconPath = resolveIcon(w.iconName);
+ 
+-            windows.append(w);
++            m_windows.append(w);
+ 
+             ini.endGroup();
+         }
+     }
+ 
++    void rebuildGroups()
++    {
++        m_groups.clear();
++        if (!m_settings->groupDuplicates()) {
++            for (int i = 0; i < m_windows.size(); ++i) {
++                WindowGroup group;
++                group.appId = m_windows.at(i).appId;
++                group.title = m_windows.at(i).title;
++                group.iconPath = m_windows.at(i).iconPath;
++                group.members.append(i);
++                group.focused = m_windows.at(i).focused;
++                group.maximized = m_windows.at(i).maximized;
++                group.minimized = m_windows.at(i).minimized;
++                m_groups.append(group);
++            }
++            return;
++        }
++
++        QHash<QString, int> indexByKey;
++        for (int i = 0; i < m_windows.size(); ++i) {
++            const WindowItem &window = m_windows.at(i);
++            QString key = window.appId.trimmed();
++            if (key.isEmpty())
++                key = QStringLiteral("title:") + window.title;
++            key = key.toLower();
++
++            const auto existing = indexByKey.constFind(key);
++            if (existing == indexByKey.constEnd()) {
++                WindowGroup group;
++                group.appId = window.appId;
++                group.title = window.title;
++                group.iconPath = window.iconPath;
++                group.members.append(i);
++                group.focused = window.focused;
++                group.maximized = window.maximized;
++                group.minimized = window.minimized;
++                m_groups.append(group);
++                indexByKey.insert(key, static_cast<int>(m_groups.size()) - 1);
++            } else {
++                WindowGroup &group = m_groups[existing.value()];
++                group.members.append(i);
++                if (window.focused) {
++                    group.focused = true;
++                    group.title = window.title;
++                    group.iconPath = window.iconPath;
++                    group.maximized = window.maximized;
++                    group.minimized = window.minimized;
++                }
++            }
++        }
++    }
+ 
+     QString resolveIcon(const QString &name)
+     {
+-        QString xdgDataHome = qEnvironmentVariable("XDG_DATA_HOME");
+-        if (xdgDataHome.isEmpty())
+-            xdgDataHome = QDir::homePath() + "/.local/share";
+-        
+-        QStringList basePaths = {
+-            xdgDataHome + "/icons/hicolor",
++        if (name.isEmpty())
++            return {};
++
++        const QStringList basePaths = {
++            qEnvironmentVariable("XDG_DATA_HOME",
++                                 QDir::homePath() + "/.local/share") + "/icons/hicolor",
+             QDir::homePath() + "/.icons",
+             "/usr/share/icons/hicolor",
+             "/usr/share/icons/breeze/apps",
+             "/usr/share/pixmaps",
+             "/usr/share/icons"
+         };
+-        
+-        QStringList sizes = {
+-            "scalable/apps",
+-            "256x256/apps",
+-            "128x128/apps",
+-            "64x64/apps",
+-            "48x48/apps",
+-            "64",
+-            "48"
++        const QStringList sizes = {
++            "scalable/apps", "256x256/apps", "128x128/apps",
++            "64x64/apps", "48x48/apps", "64", "48"
+         };
+-        
++
+         for (const QString &base : basePaths) {
+-            
+-            // 🔹 search directly for pixmaps and /usr/share/icons
+             if (base == "/usr/share/pixmaps" || base == "/usr/share/icons") {
+-                
+-                QString png = base + "/" + name + ".png";
+-                if (QFile::exists(png))
+-                    return QUrl::fromLocalFile(png).toString();
+-                
+-                QString svg = base + "/" + name + ".svg";
+-                if (QFile::exists(svg))
+-                    return QUrl::fromLocalFile(svg).toString();
+-                
++                for (const QString &suffix : {QStringLiteral(".png"), QStringLiteral(".svg")}) {
++                    const QString path = base + "/" + name + suffix;
++                    if (QFile::exists(path))
++                        return QUrl::fromLocalFile(path).toString();
++                }
+                 continue;
+             }
+-            
+-            // 🔹 icon themes with sizes
+             for (const QString &size : sizes) {
+-                QString path = base + "/" + size + "/" + name;
+-                
+-                QString svg = path + ".svg";
+-                if (QFile::exists(svg))
+-                    return QUrl::fromLocalFile(svg).toString();
+-                
+-                QString png = path + ".png";
+-                if (QFile::exists(png))
+-                    return QUrl::fromLocalFile(png).toString();
++                for (const QString &suffix : {QStringLiteral(".svg"), QStringLiteral(".png")}) {
++                    const QString path = base + "/" + size + "/" + name + suffix;
++                    if (QFile::exists(path))
++                        return QUrl::fromLocalFile(path).toString();
++                }
+             }
+         }
+-        
+         return {};
+     }
+ 
+-    void run(const QStringList &args) {
++    void run(const QStringList &args)
++    {
+         QProcess::startDetached("list-windows", args);
+     }
+-signals:
+-    void requestKeyboardRelease();
+-    
++
++    void runWindow(const QString &action, const WindowItem &window)
++    {
++        if (window.id > 0) {
++            run({"--" + action + "-id", QString::number(window.id)});
++        } else {
++            run({"--" + action, window.title});
++        }
++    }
++
++    QList<WindowItem> m_windows;
++    QList<WindowGroup> m_groups;
++    QFileSystemWatcher watcher;
++    QString iniPath;
++    TaskbarSettings *m_settings = nullptr;
+ };
+ 
+-/* ---------------- Window Controller (NEW) ---------------- */
++/* ---------------- Window Controller ---------------- */
+ 
+ class WindowController : public QObject {
+     Q_OBJECT
+@@ -320,12 +940,10 @@
+             layerShell->setKeyboardInteractivity(
+                 LayerShellQt::Window::KeyboardInteractivityOnDemand);
+         } else {
+-            layerShell->setExclusiveZone(0); // safer than -1
++            layerShell->setExclusiveZone(0);
+         }
+ 
+-        // Force layout refresh
+         window->requestUpdate();
+-
+         emit exclusiveChanged();
+     }
+     bool isExclusive() const { return exclusive; }
+@@ -334,29 +952,23 @@
+     {
+         if (!layerShell || !window)
+             return;
+-        
+-        // Temporarily release keyboard
++
+         layerShell->setKeyboardInteractivity(
+             LayerShellQt::Window::KeyboardInteractivityNone);
+-        
++
+         window->requestUpdate();
+         QGuiApplication::processEvents(QEventLoop::AllEvents, 1);
+-        
+-        // Restore based on exclusive mode
++
+         QTimer::singleShot(ms, this, [this]() {
+             if (!layerShell || !window)
+                 return;
+-            
+             layerShell->setKeyboardInteractivity(
+                 exclusive
+                 ? LayerShellQt::Window::KeyboardInteractivityOnDemand
+-                : LayerShellQt::Window::KeyboardInteractivityExclusive
+-            );
+-            
++                : LayerShellQt::Window::KeyboardInteractivityExclusive);
+             window->requestUpdate();
+         });
+     }
+-    
+ 
+     Q_INVOKABLE void show() {
+         if (!window) return;
+@@ -366,19 +978,15 @@
+ 
+     Q_INVOKABLE void hide() {
+         if (!window) return;
+-        
+         window->hide();
+         emit visibleChanged();
+     }
+ 
+     Q_INVOKABLE void toggle() {
+         if (!window) return;
+-        
+-        if (window->isVisible()) {
+-            // If currently visible, hide it
++        if (window->isVisible())
+             hide();
+-        } else {
+-            // If currently hidden, just show it
++        else {
+             window->show();
+             emit visibleChanged();
+         }
+@@ -398,61 +1006,265 @@
+     bool exclusive = false;
+ };
+ 
++/* ---------------- Taskbar context menu ---------------- */
++
++class TaskbarMenu : public QObject {
++    Q_OBJECT
++    Q_PROPERTY(QString title READ title NOTIFY changed)
++    Q_PROPERTY(int windowCount READ windowCount NOTIFY changed)
++    Q_PROPERTY(bool hasWindow READ hasWindow NOTIFY changed)
++    Q_PROPERTY(bool focused READ focused NOTIFY changed)
++    Q_PROPERTY(bool maximized READ maximized NOTIFY changed)
++    Q_PROPERTY(bool minimized READ minimized NOTIFY changed)
++    Q_PROPERTY(bool activeWindow READ activeWindow NOTIFY changed)
++    Q_PROPERTY(bool visible READ visible NOTIFY visibleChanged)
++
++public:
++    explicit TaskbarMenu(WindowModel *model, TaskbarSettings *settings,
++                         QObject *parent = nullptr)
++        : QObject(parent), m_model(model), m_settings(settings)
++    {
++        m_hideTimer.setSingleShot(true);
++        m_hideTimer.setInterval(9000);
++        connect(&m_hideTimer, &QTimer::timeout, this, &TaskbarMenu::hide);
++        m_focusGrace.setSingleShot(true);
++        m_focusGrace.setInterval(650);
++    }
++
++    void attach(QQuickWindow *window, LayerShellQt::Window *layer)
++    {
++        m_window = window;
++        m_layer = layer;
++        connect(window, &QQuickWindow::activeChanged, this, [this] {
++            if (m_visible && !m_focusGrace.isActive()
++                && m_window && !m_window->isActive()) {
++                QTimer::singleShot(120, this, [this] {
++                    if (m_visible && m_window && !m_window->isActive())
++                        hide();
++                });
++            }
++        });
++    }
++
++    QString title() const { return m_title; }
++    int windowCount() const { return m_count; }
++    bool hasWindow() const { return m_hasWindow; }
++    bool focused() const { return m_focused; }
++    bool maximized() const { return m_maximized; }
++    bool minimized() const { return m_minimized; }
++    bool activeWindow() const { return m_activeWindow; }
++    bool visible() const { return m_visible; }
++
++    Q_INVOKABLE void openForWindow(int row, int x)
++    {
++        const QVariantMap info = m_model->groupInfo(row);
++        if (info.isEmpty())
++            return;
++        m_row = row;
++        m_title = info.value(QStringLiteral("title")).toString();
++        m_count = info.value(QStringLiteral("count")).toInt();
++        m_hasWindow = true;
++        m_activeWindow = true;
++        m_activeRow = row;
++        m_focused = info.value(QStringLiteral("focused")).toBool();
++        m_maximized = info.value(QStringLiteral("maximized")).toBool();
++        m_minimized = info.value(QStringLiteral("minimized")).toBool();
++        emit changed();
++        showAt(x);
++    }
++
++    Q_INVOKABLE void openForBar(int x)
++    {
++        m_row = -1;
++        m_title = QStringLiteral("Taskbar");
++        m_count = 0;
++        m_hasWindow = false;
++        m_focused = false;
++        m_maximized = false;
++        m_minimized = false;
++        m_activeRow = m_model->indexOfFocused();
++        m_activeWindow = m_activeRow >= 0;
++        emit changed();
++        showAt(x);
++    }
++
++public slots:
++    void hide()
++    {
++        if (!m_window)
++            return;
++        m_hideTimer.stop();
++        m_focusGrace.stop();
++        m_window->hide();
++        if (m_visible) {
++            m_visible = false;
++            emit visibleChanged();
++        }
++    }
++
++    void activateSelected()
++    {
++        if (m_row >= 0) {
++            m_model->activate(m_row);
++            hide();
++        }
++    }
++
++    void minimizeSelected()
++    {
++        if (m_row >= 0) {
++            m_model->minimize(m_row);
++            hide();
++        }
++    }
++
++    void toggleMaximizedSelected()
++    {
++        if (m_row < 0)
++            return;
++        if (m_maximized)
++            m_model->unmaximize(m_row);
++        else
++            m_model->maximize(m_row);
++        hide();
++    }
++
++    void closeSelected()
++    {
++        if (m_row >= 0) {
++            m_model->close(m_row);
++            hide();
++        }
++    }
++
++    void closeAllSelected()
++    {
++        if (m_row >= 0) {
++            m_model->closeAll(m_row);
++            hide();
++        }
++    }
++
++    void closeActive()
++    {
++        if (m_activeRow >= 0)
++            m_model->close(m_activeRow);
++        hide();
++    }
++
++    void minimizeAllWindows()
++    {
++        m_model->minimizeAll();
++        hide();
++    }
++
++    void openTaskManager()
++    {
++        QProcess::startDetached(QStringLiteral("elvonos-taskmanager"), {});
++        hide();
++    }
++
++    void openSettings()
++    {
++        QProcess::startDetached(QStringLiteral("elvonos-taskbar-settings"), {});
++        hide();
++    }
++
++signals:
++    void changed();
++    void visibleChanged();
++
++private:
++    void showAt(int x)
++    {
++        if (!m_window || !m_layer)
++            return;
++        const int menuWidth = m_window->width();
++        const int screenWidth =
++            m_window->screen() ? m_window->screen()->size().width() : 1280;
++        const int rightMargin = qBound(8, screenWidth - x - menuWidth / 2,
++                                       screenWidth - menuWidth - 8);
++        m_layer->setAnchors({LayerShellQt::Window::AnchorTop,
++                             LayerShellQt::Window::AnchorRight});
++        m_layer->setMargins(QMargins(0, m_settings->height() + 6, rightMargin, 0));
++        m_window->show();
++        m_window->requestActivate();
++        m_focusGrace.start();
++        m_hideTimer.start();
++        if (!m_visible) {
++            m_visible = true;
++            emit visibleChanged();
++        }
++    }
++
++    WindowModel *m_model = nullptr;
++    TaskbarSettings *m_settings = nullptr;
++    QQuickWindow *m_window = nullptr;
++    LayerShellQt::Window *m_layer = nullptr;
++    QTimer m_hideTimer;
++    QTimer m_focusGrace;
++    int m_row = -1;
++    int m_activeRow = -1;
++    QString m_title = QStringLiteral("Taskbar");
++    int m_count = 0;
++    bool m_hasWindow = false;
++    bool m_activeWindow = false;
++    bool m_focused = false;
++    bool m_maximized = false;
++    bool m_minimized = false;
++    bool m_visible = false;
++};
++
+ /* ---------------- main() ---------------- */
+ 
+ int main(int argc, char *argv[]) {
+     QGuiApplication app(argc, argv);
+ 
+-    qmlRegisterType<WindowModel>("Windows", 1, 0, "WindowModel");
+-
+     QString socketPath = QDir::homePath() + "/.config/window-switcher/toggle.sock";
+ 
+-    // Try to connect to an existing instance
+     QString toggleMessage = "toggle";
+-    if (app.arguments().contains("--hide")) {
++    if (app.arguments().contains("--hide"))
+         toggleMessage = "hide";
+-    } else if (app.arguments().contains("--show")) {
++    else if (app.arguments().contains("--show"))
+         toggleMessage = "show";
+-    }
+ 
+     QLocalSocket sock;
+     sock.connectToServer(socketPath);
+     if (sock.waitForConnected(50)) {
+         sock.write(toggleMessage.toUtf8());
+         sock.flush();
+-        return 0;  // Existing instance received the command, exit
++        return 0;
+     }
+-    if (toggleMessage == "hide") {
+-        return 0;  // Nothing to hide
+-    }
+-    
+-    // QML engine + backend objects must be registered before load()
++    if (toggleMessage == "hide")
++        return 0;
++
+     QQmlApplicationEngine engine;
+ 
+-    /* ---------------- WindowController ---------------- */
+     auto *controller = new WindowController(nullptr, nullptr, &app);
+     engine.rootContext()->setContextProperty("WindowController", controller);
+ 
+-    /* ------------------- launcher --------------------- */
+     auto *launcher = new Launcher(&app);
+     engine.rootContext()->setContextProperty("Launcher", launcher);
+ 
+-    // --------------------------------------------------------
+-    // Win8Settings path
+-    // --------------------------------------------------------
++    auto *taskbarSettings = new TaskbarSettings(&app);
++    engine.rootContext()->setContextProperty("TaskbarSettings", taskbarSettings);
++
++    auto *tray = new TrayStatus(&app);
++    engine.rootContext()->setContextProperty("Tray", tray);
++
++    auto *model = new WindowModel(taskbarSettings, &app);
++    engine.rootContext()->setContextProperty("windowModel", model);
++
++    auto *menu = new TaskbarMenu(model, taskbarSettings, &app);
++    engine.rootContext()->setContextProperty("TaskbarMenu", menu);
++
+     const QString settingsPath =
+     QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) +
+     "/Win8Settings/settings.ini";
+ 
+-    // --------------------------------------------------------
+-    // Helper: load colors
+-    // --------------------------------------------------------
+     QVariantMap win8Colors;
+-
+     auto loadSettings = [&]() {
+         QSettings s(settingsPath, QSettings::IniFormat);
+-
+-        // ---- Colors ----
+         s.beginGroup("Colors");
+         win8Colors["Background"] = s.value("Background", "#000000").toString();
+         win8Colors["Tile"] = s.value("Tile", "#ffffff").toString();
+@@ -460,21 +1272,15 @@
+         s.value("TileHighlight", "#ff0000").toString();
+         s.endGroup();
+     };
+-
+-    // Initial load
+     loadSettings();
+-
+     engine.rootContext()->setContextProperty("Win8Colors",
+                                              QVariant::fromValue(win8Colors));
+ 
+-    // Load QML engine
+     engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
+     if (engine.rootObjects().isEmpty()) return -1;
+ 
+-    // Get the root window
+     auto *window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+ 
+-    /* ---------------- LayerShell setup ---------------- */
+     auto layer = LayerShellQt::Window::get(window);
+     layer->setLayer(LayerShellQt::Window::LayerOverlay);
+     layer->setKeyboardInteractivity(
+@@ -484,20 +1290,43 @@
+         LayerShellQt::Window::AnchorLeft,
+         LayerShellQt::Window::AnchorRight
+     });
+-    layer->setExclusiveZone(window->height());
++    layer->setExclusiveZone(taskbarSettings->height());
+ 
+     window->setFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+     window->show();
+ 
+     controller->attach(window, layer);
+-    auto *model = engine.rootObjects().first()
+-    ->findChild<WindowModel *>();
+-    
+     QObject::connect(model, &WindowModel::requestKeyboardRelease,
+                      controller, [controller]() {
+                          controller->releaseKeyboardMomentarily();
+                      });
+-    
++    QObject::connect(taskbarSettings, &TaskbarSettings::heightChanged, &app,
++                     [layer, taskbarSettings]() {
++                         layer->setExclusiveZone(taskbarSettings->height());
++                     });
++
++    /* ---------------- Context menu window ---------------- */
++    QQmlComponent menuComponent(&engine, QUrl(QStringLiteral("qrc:/ContextMenu.qml")));
++    if (menuComponent.isError()) {
++        qWarning() << "Context menu failed to load:" << menuComponent.errorString();
++    } else {
++        QObject *menuObject = menuComponent.create();
++        auto *menuWindow = qobject_cast<QQuickWindow *>(menuObject);
++        if (menuWindow) {
++            auto *menuLayer = LayerShellQt::Window::get(menuWindow);
++            menuLayer->setLayer(LayerShellQt::Window::LayerOverlay);
++            menuLayer->setKeyboardInteractivity(
++                LayerShellQt::Window::KeyboardInteractivityOnDemand);
++            menuLayer->setAnchors({LayerShellQt::Window::AnchorTop,
++                                   LayerShellQt::Window::AnchorRight});
++            menuLayer->setExclusiveZone(0);
++            menuWindow->setFlags(Qt::FramelessWindowHint);
++            menu->attach(menuWindow, menuLayer);
++        } else {
++            qWarning() << "Context menu did not create a window";
++        }
++    }
++
+     /* ---------------- Toggle server ---------------- */
+     QDir().mkpath(QFileInfo(socketPath).absolutePath());
+     QFile::remove(socketPath);
+@@ -512,20 +1341,29 @@
+         auto *client = server->nextPendingConnection();
+         QObject::connect(client, &QLocalSocket::readyRead, [controller, client]() {
+             QByteArray message = client->readAll().trimmed();
+-            if (message == "hide") {
++            if (message == "hide")
+                 controller->hide();
+-            } else if (message == "show") {
++            else if (message == "show")
+                 controller->show();
+-            } else {
++            else
+                 controller->toggle();
+-            }
+             client->disconnectFromServer();
+             client->deleteLater();
+         });
+     });
+ 
++    /* ---------------- Test hooks ---------------- */
++    const QString test = qEnvironmentVariable("ELVONOS_TASKBAR_TEST");
++    if (test.startsWith(QStringLiteral("window:"))) {
++        const int row = test.mid(7).toInt();
++        QTimer::singleShot(4000, menu, [menu, row]() {
++            menu->openForWindow(row, 620);
++        });
++    } else if (test == QStringLiteral("bar")) {
++        QTimer::singleShot(4000, menu, [menu]() { menu->openForBar(620); });
++    }
++
+     return app.exec();
+ }
+ 
+-
+ #include "main.moc"
+diff --git a/Win8Running/main.qml b/Win8Running/main.qml
+--- a/Win8Running/main.qml
++++ b/Win8Running/main.qml
+@@ -1,17 +1,14 @@
+ pragma ComponentBehavior: Bound
+ import QtQuick
+ import QtQuick.Controls
+-import Windows 1.0
+ 
+ ApplicationWindow {
+     id: root
+     width: screen.width
+-    height: 54
++    height: TaskbarSettings.height
+     title: "Taskbar"
+     color: "transparent"
+ 
+-    WindowModel { id: windowModel }
+-
+     function focusIndex() {
+         windowModel.reload()
+         list.currentIndex = windowModel.indexOfFocused()
+@@ -22,6 +19,43 @@
+     onVisibleChanged: {
+         if (visible)
+             focusIndex()
++        else
++            TaskbarMenu.hide()
++    }
++
++    component TrayIcon: Rectangle {
++        id: trayIcon
++        property string iconSource: ""
++        property string tip: ""
++        signal activated()
++
++        width: 28
++        height: 28
++        radius: 8
++        color: trayHover.hovered ? "#22FFFFFF" : "transparent"
++
++        Image {
++            anchors.centerIn: parent
++            width: 18
++            height: 18
++            source: trayIcon.iconSource
++            fillMode: Image.PreserveAspectFit
++            smooth: true
++        }
++
++        HoverHandler { id: trayHover }
++        ToolTip.visible: trayHover.hovered
++        ToolTip.text: trayIcon.tip
++        ToolTip.delay: 250
++
++        MouseArea {
++            anchors.fill: parent
++            cursorShape: Qt.PointingHandCursor
++            onClicked: {
++                TaskbarMenu.hide()
++                trayIcon.activated()
++            }
++        }
+     }
+ 
+     Rectangle {
+@@ -54,7 +88,6 @@
+             color: "#55FFFFFF"
+         }
+ 
+-        // Aero-style gloss band
+         Rectangle {
+             anchors.top: parent.top
+             anchors.left: parent.left
+@@ -63,6 +96,18 @@
+             color: "#0EFFFFFF"
+         }
+ 
++        /* Background right-click opens the taskbar menu. */
++        MouseArea {
++            anchors.fill: parent
++            acceptedButtons: Qt.LeftButton | Qt.RightButton
++            onClicked: function (mouse) {
++                if (mouse.button === Qt.RightButton)
++                    TaskbarMenu.openForBar(mouse.x)
++                else
++                    TaskbarMenu.hide()
++            }
++        }
++
+         /* ---------- Start + window list ---------- */
+         Row {
+             id: leftGroup
+@@ -116,6 +161,7 @@
+                     anchors.fill: parent
+                     cursorShape: Qt.PointingHandCursor
+                     onClicked: {
++                        TaskbarMenu.hide()
+                         Launcher.launchDetached("Win8Start")
+                         WindowController.hide()
+                     }
+@@ -173,7 +219,7 @@
+                     event.accepted = true
+                     break
+                 case Qt.Key_Escape:
+-                    WindowController.hide()
++                    TaskbarMenu.hide()
+                     event.accepted = true
+                     break
+                 }
+@@ -189,11 +235,12 @@
+                 required property string title
+                 required property string iconPath
+                 required property int index
++                required property int count
+ 
+                 readonly property bool selected: ListView.isCurrentItem
+                 readonly property bool hovering: chipHover.hovered
+ 
+-                width: 178
++                width: TaskbarSettings.showTitles ? 178 : 64
+                 height: 40
+                 radius: 10
+                 color: selected ? "#2A3945" : (hovering ? "#16FFFFFF" : "transparent")
+@@ -220,7 +267,7 @@
+                     radius: 6
+                     color: "#2A2A33"
+                     anchors.left: parent.left
+-                    anchors.leftMargin: 10
++                    anchors.leftMargin: TaskbarSettings.showTitles ? 10 : 16
+                     anchors.verticalCenter: parent.verticalCenter
+                     visible: chipIcon.status !== Image.Ready
+ 
+@@ -236,7 +283,7 @@
+                 Image {
+                     id: chipIcon
+                     anchors.left: parent.left
+-                    anchors.leftMargin: 10
++                    anchors.leftMargin: TaskbarSettings.showTitles ? 10 : 16
+                     anchors.verticalCenter: parent.verticalCenter
+                     width: 22
+                     height: 22
+@@ -246,9 +293,10 @@
+                 }
+ 
+                 Text {
++                    visible: TaskbarSettings.showTitles
+                     anchors.left: chipIcon.right
+                     anchors.leftMargin: 8
+-                    anchors.right: closeButton.left
++                    anchors.right: chip.count > 1 ? countBadge.left : closeButton.left
+                     anchors.rightMargin: 4
+                     anchors.verticalCenter: parent.verticalCenter
+                     text: chip.title || chip.appId
+@@ -258,6 +306,28 @@
+                 }
+ 
+                 Rectangle {
++                    id: countBadge
++                    visible: chip.count > 1
++                    width: visible ? 20 : 0
++                    height: 16
++                    radius: 8
++                    anchors.right: closeButton.left
++                    anchors.rightMargin: 2
++                    anchors.verticalCenter: parent.verticalCenter
++                    color: "#334CC2FF"
++                    border.width: 1
++                    border.color: "#554CC2FF"
++
++                    Text {
++                        anchors.centerIn: parent
++                        text: chip.count
++                        color: "#BFE6FF"
++                        font.pixelSize: 9
++                        font.weight: Font.DemiBold
++                    }
++                }
++
++                Rectangle {
+                     id: closeButton
+                     width: 20
+                     height: 20
+@@ -281,7 +351,10 @@
+ 
+                     MouseArea {
+                         anchors.fill: parent
+-                        onClicked: windowModel.close(chip.index)
++                        onClicked: {
++                            TaskbarMenu.hide()
++                            windowModel.close(chip.index)
++                        }
+                     }
+                 }
+ 
+@@ -301,10 +374,13 @@
+                     onClicked: function (mouse) {
+                         list.currentIndex = chip.index
+                         if (mouse.button === Qt.MiddleButton) {
++                            TaskbarMenu.hide()
+                             windowModel.close(chip.index)
+                         } else if (mouse.button === Qt.RightButton) {
+-                            windowModel.activateOnly(chip.index)
++                            TaskbarMenu.openForWindow(chip.index,
++                                chip.mapToItem(bar, mouse.x, 0).x)
+                         } else {
++                            TaskbarMenu.hide()
+                             windowModel.activate(chip.index)
+                             if (!WindowController.exclusive)
+                                 WindowController.hide()
+@@ -324,23 +400,62 @@
+             }
+         }
+ 
+-        /* ---------- Clock / desktop ---------- */
++        /* ---------- Tray, clock, desktop ---------- */
+         Row {
+             id: rightGroup
+             anchors.right: parent.right
+             anchors.rightMargin: 12
+             anchors.verticalCenter: parent.verticalCenter
+-            spacing: 10
++            spacing: 8
+ 
+             Text {
+                 id: windowCount
+-                text: list.count
++                visible: TaskbarSettings.showCount
++                text: windowModel.windowCount
+                 color: "#6B7280"
+                 font.pixelSize: 10
+                 anchors.verticalCenter: parent.verticalCenter
+             }
+ 
++            Rectangle {
++                visible: TaskbarSettings.showTray
++                         && (TaskbarSettings.showVolume
++                             || TaskbarSettings.showNetwork
++                             || (TaskbarSettings.showBattery && Tray.batteryPresent))
++                width: 1
++                height: 22
++                color: "#22FFFFFF"
++                anchors.verticalCenter: parent.verticalCenter
++            }
++
++            Row {
++                anchors.verticalCenter: parent.verticalCenter
++                spacing: 2
++
++                TrayIcon {
++                    visible: TaskbarSettings.showTray && TaskbarSettings.showVolume
++                    iconSource: Tray.volumeIcon
++                    tip: Tray.volumeTip
++                    onActivated: Launcher.launchFirst(["pavucontrol", "elvonos-control"])
++                }
++                TrayIcon {
++                    visible: TaskbarSettings.showTray && TaskbarSettings.showNetwork
++                    iconSource: Tray.networkIcon
++                    tip: Tray.networkTip
++                    onActivated: Launcher.launchFirst(["nm-connection-editor",
++                                                       "elvonos-control"])
++                }
++                TrayIcon {
++                    visible: TaskbarSettings.showTray && TaskbarSettings.showBattery
++                             && Tray.batteryPresent
++                    iconSource: Tray.batteryIcon
++                    tip: Tray.batteryTip
++                    onActivated: Launcher.launchFirst(["elvonos-control"])
++                }
++            }
++
+             Column {
++                visible: TaskbarSettings.showClock
+                 spacing: 1
+                 anchors.verticalCenter: parent.verticalCenter
+ 
+@@ -393,7 +508,10 @@
+                 MouseArea {
+                     anchors.fill: parent
+                     cursorShape: Qt.PointingHandCursor
+-                    onClicked: windowModel.minimizeAll()
++                    onClicked: {
++                        TaskbarMenu.hide()
++                        windowModel.minimizeAll()
++                    }
+                 }
+             }
+         }
+diff --git a/Win8Running/resources.qrc b/Win8Running/resources.qrc
+--- a/Win8Running/resources.qrc
++++ b/Win8Running/resources.qrc
+@@ -1,6 +1,7 @@
+ <RCC>
+     <qresource prefix="/">
+         <file>main.qml</file>
++        <file>ContextMenu.qml</file>
+         <file>start.png</file>
+     </qresource>
+ </RCC>
+diff --git a/Win8Running/ContextMenu.qml b/Win8Running/ContextMenu.qml
+new file mode 100644
+--- /dev/null
++++ b/Win8Running/ContextMenu.qml
+@@ -0,0 +1,161 @@
++import QtQuick
++import QtQuick.Controls
++
++Window {
++    id: menuWindow
++    width: 264
++    height: menuColumn.implicitHeight + 16
++    visible: false
++    color: "transparent"
++    flags: Qt.FramelessWindowHint
++    title: "Taskbar Menu"
++
++    component MenuItem: Rectangle {
++        id: item
++        property string label: ""
++        property bool danger: false
++        signal activated()
++
++        width: menuColumn.width
++        height: 32
++        radius: 8
++        color: itemHover.hovered ? (danger ? "#3A1E1E" : "#1A2A3945") : "transparent"
++
++        Text {
++            anchors.left: parent.left
++            anchors.leftMargin: 10
++            anchors.verticalCenter: parent.verticalCenter
++            text: item.label
++            color: item.danger ? "#FFB4B0" : "#E9ECF2"
++            font.pixelSize: 10
++        }
++
++        HoverHandler { id: itemHover }
++
++        MouseArea {
++            anchors.fill: parent
++            cursorShape: Qt.PointingHandCursor
++            onClicked: item.activated()
++        }
++    }
++
++    component Divider: Rectangle {
++        width: menuColumn.width
++        height: 1
++        color: "#22FFFFFF"
++    }
++
++    Rectangle {
++        anchors.fill: parent
++        radius: 14
++        color: "#FA101017"
++        border.width: 1
++        border.color: "#33FFFFFF"
++        clip: true
++
++        Rectangle {
++            anchors.top: parent.top
++            anchors.left: parent.left
++            anchors.right: parent.right
++            height: 1
++            color: "#26FFFFFF"
++        }
++
++        Column {
++            id: menuColumn
++            anchors.left: parent.left
++            anchors.right: parent.right
++            anchors.top: parent.top
++            anchors.margins: 8
++            spacing: 2
++
++            Item {
++                width: menuColumn.width
++                height: 40
++
++                Column {
++                    anchors.left: parent.left
++                    anchors.leftMargin: 10
++                    anchors.verticalCenter: parent.verticalCenter
++                    spacing: 1
++
++                    Text {
++                        width: menuColumn.width - 20
++                        text: TaskbarMenu.title
++                        color: "#F2F4F8"
++                        font.pixelSize: 11
++                        font.weight: Font.DemiBold
++                        elide: Text.ElideRight
++                    }
++
++                    Text {
++                        visible: TaskbarMenu.windowCount > 1
++                        text: TaskbarMenu.windowCount + " windows in this group"
++                        color: "#7D8490"
++                        font.pixelSize: 8
++                    }
++                }
++            }
++
++            Divider {}
++
++            MenuItem {
++                label: "Activate"
++                visible: TaskbarMenu.hasWindow
++                onActivated: TaskbarMenu.activateSelected()
++            }
++            MenuItem {
++                label: "Minimize"
++                visible: TaskbarMenu.hasWindow
++                onActivated: TaskbarMenu.minimizeSelected()
++            }
++            MenuItem {
++                label: TaskbarMenu.maximized ? "Restore" : "Maximize"
++                visible: TaskbarMenu.hasWindow
++                onActivated: TaskbarMenu.toggleMaximizedSelected()
++            }
++
++            Divider { visible: TaskbarMenu.hasWindow }
++
++            MenuItem {
++                label: "Close"
++                danger: true
++                visible: TaskbarMenu.hasWindow
++                onActivated: TaskbarMenu.closeSelected()
++            }
++            MenuItem {
++                label: "Close all " + TaskbarMenu.windowCount + " windows"
++                danger: true
++                visible: TaskbarMenu.windowCount > 1
++                onActivated: TaskbarMenu.closeAllSelected()
++            }
++
++            Divider { visible: TaskbarMenu.hasWindow }
++
++            MenuItem {
++                label: "Close active window"
++                danger: true
++                visible: !TaskbarMenu.hasWindow && TaskbarMenu.activeWindow
++                onActivated: TaskbarMenu.closeActive()
++            }
++            MenuItem {
++                label: "Minimize all windows"
++                visible: !TaskbarMenu.hasWindow
++                onActivated: TaskbarMenu.minimizeAllWindows()
++            }
++            MenuItem {
++                label: "Task Manager"
++                onActivated: TaskbarMenu.openTaskManager()
++            }
++            MenuItem {
++                label: "Taskbar settings"
++                onActivated: TaskbarMenu.openSettings()
++            }
++        }
++    }
++
++    Shortcut {
++        sequence: "Escape"
++        onActivated: TaskbarMenu.hide()
++    }
++}

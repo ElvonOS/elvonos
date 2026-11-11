@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file>Archiver.qml</file>
+    </qresource>
+</RCC>

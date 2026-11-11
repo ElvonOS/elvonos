@@ -1,0 +1,51 @@
+#!/bin/bash
+# ElvonOS first-boot setup: installs the optional software selected in the
+# installer. Requires internet; retries DNS for up to five minutes.
+set -u
+
+CONF=/etc/elvonos/first-boot.json
+LOG=/var/log/elvonos-firstboot.log
+
+exec >>"$LOG" 2>&1
+echo "=== $(date -Is) first boot ==="
+[ -f "$CONF" ] || exit 0
+
+for _ in $(seq 1 60); do
+    getent hosts deb.debian.org >/dev/null 2>&1 && break
+    sleep 5
+done
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update || true
+
+sets=$(jq -r '.extras[]?' "$CONF" 2>/dev/null || true)
+for s in $sets; do
+    case "$s" in
+        multimedia)
+            pkgs="ffmpeg gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly"
+            ;;
+        dev)
+            pkgs="build-essential git cmake ninja-build gdb"
+            ;;
+        gaming)
+            pkgs="wine wine64 winetricks gamemode mangohud"
+            ;;
+        office)
+            pkgs="libreoffice"
+            ;;
+        virt)
+            pkgs="qemu-system-x86 virt-manager"
+            ;;
+        *)
+            pkgs=""
+            ;;
+    esac
+    if [ -n "$pkgs" ]; then
+        echo "--- installing $s: $pkgs"
+        apt-get install -y --no-install-recommends $pkgs || echo "install of $s failed"
+    fi
+done
+
+mv "$CONF" "$CONF.done" 2>/dev/null || rm -f "$CONF"
+systemctl disable elvonos-firstboot.service >/dev/null 2>&1 || true
+echo "=== done ==="

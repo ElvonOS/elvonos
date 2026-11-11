@@ -1,0 +1,50 @@
+#!/bin/bash
+# Enable/disable automatic installation of staged updates on shutdown/next boot.
+set -euo pipefail
+
+CONF=/etc/elvonos/update.conf
+UNIT=elvonos-update-shutdown.service
+FLAG=/etc/elvonos/auto-apply.enabled
+
+if [ "$(id -u)" -ne 0 ]; then
+    if sudo -n true 2>/dev/null; then
+        exec sudo -n "$0" "$@"
+    fi
+    echo "Root privileges required." >&2
+    exit 1
+fi
+
+[ -f "$CONF" ] || touch "$CONF"
+
+set_value() {
+    sed -i '/^AUTO_APPLY=/d' "$CONF"
+    printf 'AUTO_APPLY=%s\n' "$1" >> "$CONF"
+}
+
+case "${1:-status}" in
+    on)
+        set_value shutdown
+        mkdir -p "$(dirname "$FLAG")"
+        : > "$FLAG"
+        systemctl enable "$UNIT" >/dev/null 2>&1 || true
+        systemctl enable --now elvonos-update-check.timer >/dev/null 2>&1 || true
+        echo "shutdown"
+        ;;
+    off)
+        set_value off
+        rm -f "$FLAG"
+        rm -f /var/lib/elvonos/update/staged.json \
+              /var/lib/elvonos/update/feed.json \
+              /var/lib/elvonos/update/feed.json.minisig
+        systemctl disable "$UNIT" >/dev/null 2>&1 || true
+        echo "off"
+        ;;
+    status)
+        . "$CONF"
+        echo "${AUTO_APPLY:-shutdown}"
+        ;;
+    *)
+        echo "Usage: elvonos-update-policy on|off|status" >&2
+        exit 2
+        ;;
+esac

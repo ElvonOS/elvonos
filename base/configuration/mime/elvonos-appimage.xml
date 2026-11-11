@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-appimage">
+    <comment>AppImage application</comment>
+    <comment xml:lang="de">AppImage-Anwendung</comment>
+    <glob pattern="*.AppImage" weight="80"/>
+    <glob pattern="*.appimage" weight="80"/>
+    <glob pattern="*.AppImage.zsync" weight="50"/>
+    <magic priority="80">
+      <match value="AI\x01" type="string" offset="8"/>
+      <match value="AI\x02" type="string" offset="8"/>
+    </magic>
+  </mime-type>
+</mime-info>

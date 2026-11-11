@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=ElvonOS (Win8DE)
+Comment=ElvonOS with Win8DE shell on labwc
+Exec=labwc
+Icon=elvonos
+Type=Application
+DesktopNames=ElvonOS;labwc;wlroots

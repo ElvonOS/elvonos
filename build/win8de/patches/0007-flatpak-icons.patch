@@ -1,0 +1,21 @@
+diff --git a/Win8Start/main.cpp b/Win8Start/main.cpp
+index 8da7ae2..4c208ef 100644
+--- a/Win8Start/main.cpp
++++ b/Win8Start/main.cpp
+@@ -564,7 +564,16 @@ public:
+         "/usr/share/icons/breeze/apps/32/",
+         "/usr/share/icons/",
+         "/var/lib/flatpak/exports/share/icons",
++        "/var/lib/flatpak/exports/share/icons/hicolor/512x512/apps/",
++        "/var/lib/flatpak/exports/share/icons/hicolor/256x256/apps/",
++        "/var/lib/flatpak/exports/share/icons/hicolor/128x128/apps/",
++        "/var/lib/flatpak/exports/share/icons/hicolor/64x64/apps/",
++        "/var/lib/flatpak/exports/share/icons/hicolor/scalable/apps/",
+         home + "/.local/share/flatpak/exports/share/icons",
++        home + "/.local/share/flatpak/exports/share/icons/hicolor/512x512/apps/",
++        home + "/.local/share/flatpak/exports/share/icons/hicolor/256x256/apps/",
++        home + "/.local/share/flatpak/exports/share/icons/hicolor/128x128/apps/",
++        home + "/.local/share/flatpak/exports/share/icons/hicolor/scalable/apps/",
+         home + "/.local/share/icons/hicolor/256x256/apps/"};
+ 
+     for (const QString &dir : iconDirs) {

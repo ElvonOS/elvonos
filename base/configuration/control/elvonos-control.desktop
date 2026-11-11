@@ -1,0 +1,25 @@
+[Desktop Entry]
+Type=Application
+Name=Control Center
+Name[de]=Kontrollzentrum
+Name[fr]=Centre de contrôle
+Name[es]=Centro de control
+Name[it]=Centro di controllo
+Name[pt]=Centro de Controle
+Name[nl]=Controlecentrum
+Name[pl]=Centrum Kontroli
+Name[ru]=Центр управления
+Name[tr]=Kontrol Merkezi
+Name[uk]=Центр управління
+Name[cs]=Řídicí centrum
+Name[sv]=Kontrollcenter
+Name[zh_CN]=控制中心
+Name[ja]=コントロールセンター
+GenericName=Performance & Protection
+Comment=Tune performance, manage ZRAM and protect the system and Waydroid
+Exec=elvonos-control
+Icon=control-center2
+Terminal=false
+StartupNotify=true
+Categories=System;Settings;Utility;
+Keywords=performance;protection;firewall;zram;waydroid;tuning;security;

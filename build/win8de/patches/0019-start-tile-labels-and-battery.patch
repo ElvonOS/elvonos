@@ -1,0 +1,61 @@
+diff --git a/Win8Start/main.qml b/Win8Start/main.qml
+index 5bb51d2..e4222f6 100644
+--- a/Win8Start/main.qml
++++ b/Win8Start/main.qml
+@@ -214,6 +214,7 @@ ApplicationWindow {
+             // Battery display next to "Start"
+             Item {
+                 id: batteryDisplay
++                visible: battery.percent >= 0
+                 width: batteryFill.width + batteryOutline.width + batteryPercent.width * 1.1
+                 height: start.height
+                 anchors.verticalCenter: start.verticalCenter
+@@ -281,13 +282,14 @@ ApplicationWindow {
+             // modern global search entry
+             Rectangle {
+                 id: searchPill
+-                width: Math.min(380, topstrip.width / 3)
++                width: Math.min(320, topstrip.width / 4)
+                 height: 40
+                 radius: 20
+                 color: searchHover.hovered ? "#2AFFFFFF" : "#1FFFFFFF"
+                 border.width: 1
+                 border.color: "#33FFFFFF"
+-                anchors.horizontalCenter: parent.horizontalCenter
++                anchors.left: parent.left
++                anchors.leftMargin: 200
+                 anchors.verticalCenter: start.verticalCenter
+ 
+                 Behavior on color { ColorAnimation { duration: 120 } }
+@@ -329,8 +331,8 @@ ApplicationWindow {
+             Row {
+                 id: powerButtons
+                 spacing: 8
+-                anchors.right: batteryDisplay.left
+-                anchors.rightMargin: 20
++                anchors.right: batteryDisplay.visible ? batteryDisplay.left : userCard.left
++                anchors.rightMargin: batteryDisplay.visible ? 20 : 28
+                 anchors.verticalCenter: start.verticalCenter
+ 
+                 Rectangle {
+@@ -1498,14 +1500,19 @@ ApplicationWindow {
+                         //-----------------------------------------------------------
+                         Text {
+                             anchors.left: parent.left
++                            anchors.right: parent.right
+                             anchors.bottom: parent.bottom
+                             anchors.leftMargin: 16
++                            anchors.rightMargin: 12
+                             anchors.bottomMargin: 8
+                             text: tile.name
+                             color: Win8Colors.Text
+                             font.pointSize: 14
+                             font.weight: 600
+-                            width: parent.width - 10
++                            fontSizeMode: Text.Fit
++                            minimumPointSize: 8
++                            elide: Text.ElideRight
++                            maximumLineCount: 1
+                             z: 2
+                             visible: !tile.launching && tile.size !== "small" && !tile.qmlEnabled
+                         }

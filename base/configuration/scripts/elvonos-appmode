@@ -1,0 +1,115 @@
+#!/usr/bin/python3
+"""Switch ElvonOS between Metro (fullscreen) and desktop app windows.
+
+metro   – applications open fullscreen without window decorations, like the
+          Windows 8.1 Metro surface
+desktop – applications open as normal movable windows
+
+Implemented with a labwc window rule (`ToggleFullscreen` for normal windows),
+so every launcher (Start menu, dock, desktop icons, Explorer) follows the mode
+without changes.  Dialogs keep their normal size.
+"""
+import os
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+CONFIG = os.path.join(HOME, ".config", "elvonos", "app-mode")
+RC = os.path.join(HOME, ".config", "labwc", "rc.xml")
+SYSTEM_RC = "/etc/xdg/labwc/rc.xml"
+START = "<!-- elvonos-metro-start -->"
+END = "<!-- elvonos-metro-end -->"
+BLOCK = (
+    START + "\n"
+    "  <windowRules>\n"
+    "    <windowRule identifier=\"*\" type=\"normal\" matchOnce=\"true\">\n"
+    "      <action name=\"Maximize\"/>\n"
+    "    </windowRule>\n"
+    "  </windowRules>\n"
+    "  " + END + "\n"
+)
+
+
+def read_mode():
+    try:
+        with open(CONFIG, encoding="utf-8") as handle:
+            value = handle.read().strip().lower()
+        if value in ("metro", "desktop"):
+            return value
+    except OSError:
+        pass
+    return "desktop"
+
+
+def reload_labwc():
+    environment = os.environ.copy()
+    if "LABWC_PID" not in environment:
+        try:
+            environment["LABWC_PID"] = subprocess.check_output(
+                ["pgrep", "-x", "labwc"], text=True).split()[0]
+        except (OSError, IndexError, subprocess.SubprocessError):
+            pass
+    try:
+        subprocess.run(["labwc", "-r"], check=False, env=environment,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def ensure_rc():
+    if os.path.exists(RC):
+        return
+    os.makedirs(os.path.dirname(RC), exist_ok=True)
+    try:
+        with open(SYSTEM_RC, encoding="utf-8") as source:
+            text = source.read()
+    except OSError:
+        text = "<?xml version=\"1.0\"?>\n<openbox_config>\n</openbox_config>\n"
+    with open(RC, "w", encoding="utf-8") as target:
+        target.write(text)
+
+
+def apply_mode(mode):
+    ensure_rc()
+    try:
+        with open(RC, encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError:
+        return False
+    if START in text:
+        start = text.index(START)
+        end = text.index(END) + len(END)
+        text = text[:start] + text[end:]
+    if mode == "metro":
+        closing = text.rfind("</openbox_config>")
+        if closing < 0:
+            text += BLOCK
+        else:
+            text = text[:closing] + BLOCK + text[closing:]
+    with open(RC, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    reload_labwc()
+    return True
+
+
+def main():
+    arguments = sys.argv[1:]
+    if not arguments or arguments[0] == "status":
+        print("app-mode=" + read_mode())
+        return 0
+    mode = arguments[0].lower()
+    if mode not in ("metro", "desktop"):
+        print("Usage: elvonos-appmode metro|desktop|status", file=sys.stderr)
+        return 2
+    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+    with open(CONFIG, "w", encoding="utf-8") as handle:
+        handle.write(mode + "\n")
+    if not apply_mode(mode):
+        print("Could not update labwc configuration", file=sys.stderr)
+        return 1
+    print("app-mode=" + mode)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,64 @@
+#!/bin/bash
+# ElvonOS audio noise protection helper (runs as the logged-in user).
+#
+# Enables/disables the PipeWire WebRTC noise-suppression + echo-cancel source
+# and restarts the user audio stack. The active configuration lives in
+# /etc/pipewire; disabling renames it to *.disabled so the choice persists.
+set -u
+
+PW_CONF="/etc/pipewire/pipewire.conf.d/99-elvonos-noise.conf"
+WP_CONF="/etc/wireplumber/wireplumber.conf.d/99-elvonos-noise.conf"
+
+restart_audio() {
+    systemctl --user restart pipewire pipewire-pulse wireplumber >/dev/null 2>&1 || true
+    sleep 2
+}
+
+hardware_source() {
+    pactl list short sources 2>/dev/null \
+        | awk '$2 !~ /elvonos/ && $2 !~ /\.monitor$/ { print $2; exit }'
+}
+
+enable() {
+    sudo -n mv "$PW_CONF.disabled" "$PW_CONF" 2>/dev/null || true
+    sudo -n mv "$WP_CONF.disabled" "$WP_CONF" 2>/dev/null || true
+    restart_audio
+    local source
+    source=$(pactl list short sources 2>/dev/null \
+        | awk '$2 ~ /echo-cancel|elvonos/ { print $2; exit }')
+    if [ -n "$source" ]; then
+        pactl set-default-source "$source" >/dev/null 2>&1 || true
+    fi
+    echo "Noise protection enabled"
+}
+
+disable() {
+    sudo -n mv "$PW_CONF" "$PW_CONF.disabled" 2>/dev/null || true
+    sudo -n mv "$WP_CONF" "$WP_CONF.disabled" 2>/dev/null || true
+    restart_audio
+    local source
+    source=$(hardware_source)
+    if [ -n "$source" ]; then
+        pactl set-default-source "$source" >/dev/null 2>&1 || true
+    fi
+    echo "Noise protection disabled"
+}
+
+status() {
+    if [ -f "$PW_CONF" ] && [ ! -f "$PW_CONF.disabled" ]; then
+        echo on
+    else
+        echo off
+    fi
+}
+
+case "${1:-status}" in
+    on|enable)  enable ;;
+    off|disable) disable ;;
+    restart)    restart_audio; echo "Audio stack restarted" ;;
+    status)     status ;;
+    *)
+        echo "usage: $0 on|off|status|restart" >&2
+        exit 2
+        ;;
+esac

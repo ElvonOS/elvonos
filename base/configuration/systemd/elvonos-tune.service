@@ -1,0 +1,12 @@
+[Unit]
+Description=ElvonOS performance and protection layer
+After=local-fs.target
+Before=graphical.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/elvonos-tune boot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

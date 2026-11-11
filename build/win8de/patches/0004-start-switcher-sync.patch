@@ -1,0 +1,16 @@
+diff --git a/Win8Start/main.cpp b/Win8Start/main.cpp
+--- a/Win8Start/main.cpp
++++ b/Win8Start/main.cpp
+@@ -1597,8 +1597,12 @@
+       m_window->showFullScreen();
+       m_window->raise();
+       m_window->requestActivate();
++      // Hide the left-hand Win8Running switcher/taskbar while Start is open.
++      QProcess::startDetached("Win8Running", {"--hide"});
+     } else {
+       m_window->hide();
++      // Show the desktop taskbar/window switcher again on the desktop.
++      QProcess::startDetached("Win8Running", {"--show"});
+     }
+   }
+ };

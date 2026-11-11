@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Install APK
+Name[de]=APK installieren
+GenericName=Android Package Installer
+Comment=Install Android APK files into Waydroid
+Comment[de]=Android-APK-Dateien in Waydroid installieren
+Exec=elvonos-waydroid-install-apk %F
+Icon=waydroid
+Terminal=false
+StartupNotify=false
+Categories=X-WayDroid-App;Utility;
+MimeType=application/vnd.android.package-archive;
+X-ElvonOS-Android=true

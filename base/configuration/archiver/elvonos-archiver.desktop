@@ -1,0 +1,24 @@
+[Desktop Entry]
+Type=Application
+Name=Archiver
+Name[de]=Archivierer
+Name[fr]=Archiveur
+Name[es]=Archivador
+Name[it]=Archiviatore
+Name[pt]=Arquivador
+Name[pl]=Archiwista
+Name[ru]=Архиватор
+Name[tr]=Arşivleyici
+Name[uk]=Архіватор
+Name[cs]=Archiv
+Name[sv]=Arkivera
+Name[zh_CN]=存档器
+Name[ja]=アーカイバ
+GenericName=Archive Manager
+Comment=Create, browse and extract ZIP and TAR archives
+Exec=elvonos-archiver
+Icon=file-roller
+Terminal=false
+StartupNotify=true
+Categories=Utility;Archiving;Compression;
+Keywords=zip;tar;gz;archive;compress;extract;

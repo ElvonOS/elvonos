@@ -1,0 +1,70 @@
+#!/usr/bin/python3
+"""Print the ElvonOS health snapshot.
+
+Usage: elvonos-health [--json]
+"""
+import json
+import sys
+from pathlib import Path
+
+STATUS = Path("/run/elvonos/health.json")
+
+
+def human_bytes(value):
+    value = float(value or 0)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024 or unit == "TiB":
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} TiB"
+
+
+def main():
+    if not STATUS.exists():
+        if "--json" in sys.argv:
+            print("{}")
+        else:
+            print("ElvonOS health data is not available (is elvonos-healthd running?).")
+        return 1 if "--json" not in sys.argv else 0
+    data = json.loads(STATUS.read_text())
+    if "--json" in sys.argv:
+        print(json.dumps(data, indent=2))
+        return 0
+    memory = data.get("memory", {})
+    disk = data.get("disk", {})
+    units = data.get("units", {})
+    gpu = data.get("gpu", {})
+    waydroid = data.get("waydroid", {})
+    load = data.get("load", {})
+    print("ElvonOS health")
+    print(f"  Memory:    {memory.get('used_pct', '?')}% used")
+    print(f"  Disk:      {disk.get('used_pct', '?')}% used, "
+          f"{human_bytes(disk.get('free_bytes', 0))} free")
+    print(f"  Load:      {load.get('load1', '?')} / {load.get('load5', '?')} / "
+          f"{load.get('load15', '?')}")
+    print(f"  Uptime:    {load.get('uptime', 0)} s")
+    if gpu.get("render_nodes"):
+        print("  GPU:       " + ", ".join(gpu["render_nodes"]))
+    else:
+        print("  GPU:       no render node")
+    if waydroid.get("available"):
+        state = "frozen" if waydroid.get("frozen") else (
+            "booted" if waydroid.get("booted") else "not booted")
+        print(f"  Waydroid:  session={waydroid.get('session')} {state}, "
+              f"apps={waydroid.get('apps')}, bridge={waydroid.get('bridge')}")
+        if waydroid.get("graphics"):
+            print(f"             {waydroid['graphics']}")
+        print(f"             data {human_bytes(waydroid.get('data_used', 0))}")
+    else:
+        print("  Waydroid:  not available")
+    if units.get("count"):
+        print(f"  Failed units: {units['count']} ({', '.join(units.get('units', []))})")
+    if data.get("alerts"):
+        print("  Alerts:    " + ", ".join(data["alerts"]))
+    else:
+        print("  Alerts:    none")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,26 @@
+[Desktop Entry]
+Type=Application
+Name=Media Player
+Name[de]=Medienplayer
+Name[fr]=Lecteur multimédia
+Name[es]=Reproductor multimedia
+Name[it]=Lettore multimediale
+Name[pt]=Reprodutor de mídia
+Name[nl]=Mediaspeler
+Name[pl]=Odtwarzacz multimediów
+Name[ru]=Медиаплеер
+Name[tr]=Medya Oynatıcı
+Name[uk]=Медіаплеєр
+Name[cs]=Přehrávač médií
+Name[sv]=Mediaspelare
+Name[zh_CN]=媒体播放器
+Name[ja]=メディアプレーヤー
+GenericName=Media Player
+Comment=Play music and videos
+Exec=elvonos-media %F
+Icon=multimedia-player
+Terminal=false
+StartupNotify=true
+Categories=AudioVideo;Audio;Video;Player;
+MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;audio/mpeg;audio/flac;audio/ogg;audio/x-wav;
+Keywords=media;video;music;player;audio;film;

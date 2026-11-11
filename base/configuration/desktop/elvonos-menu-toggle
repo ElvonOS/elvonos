@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# ElvonOS V1 — Start menu toggle (click to open, click again to close)
+# Called by Waybar custom/start block.
+set -u
+
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+    for socket in "$XDG_RUNTIME_DIR"/wayland-*; do
+        if [[ -S "$socket" && "$socket" != *.lock ]]; then
+            export WAYLAND_DISPLAY="${socket##*/}"
+            break
+        fi
+    done
+fi
+
+export GDK_BACKEND="wayland"
+export QT_QPA_PLATFORM="wayland"
+
+MENU_CONF="/etc/wofi/elvonos-menu.conf"
+MENU_STYLE="/etc/wofi/elvonos-menu.css"
+
+# If wofi is already running, close it (toggle off)
+if pgrep -x wofi >/dev/null 2>&1; then
+    pkill -x wofi 2>/dev/null || true
+    exit 0
+fi
+
+# Otherwise open the ChromeOS-style app launcher (smaller)
+DRUN_ARGS=(--show drun --prompt "  Suchen" --width 560 --height 400 --allow-images --insensitive --hide-scroll --cache-file /dev/null)
+if [[ -f "$MENU_CONF" ]]; then
+    DRUN_ARGS=(--conf "$MENU_CONF" "${DRUN_ARGS[@]}")
+fi
+if [[ -f "$MENU_STYLE" ]]; then
+    DRUN_ARGS=(--style "$MENU_STYLE" "${DRUN_ARGS[@]}")
+fi
+
+exec wofi "${DRUN_ARGS[@]}"

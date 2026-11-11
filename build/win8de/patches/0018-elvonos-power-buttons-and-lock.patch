@@ -1,0 +1,109 @@
+diff --git a/Win8Start/main.cpp b/Win8Start/main.cpp
+index b607022..dc29706 100644
+--- a/Win8Start/main.cpp
++++ b/Win8Start/main.cpp
+@@ -1798,7 +1798,7 @@ int main(int argc, char *argv[]) {
+       "/Win8Start.lock";
+ 
+   QLockFile lockFile(lockPath);
+-  lockFile.setStaleLockTime(0);
++  lockFile.setStaleLockTime(15000);
+ 
+   if (!lockFile.tryLock()) {
+     QLocalSocket socket;
+diff --git a/Win8Start/main.qml b/Win8Start/main.qml
+index 3d9def3..5bb51d2 100644
+--- a/Win8Start/main.qml
++++ b/Win8Start/main.qml
+@@ -325,6 +325,91 @@ ApplicationWindow {
+                 }
+             }
+ 
++            // Power actions: always visible on the Start screen
++            Row {
++                id: powerButtons
++                spacing: 8
++                anchors.right: batteryDisplay.left
++                anchors.rightMargin: 20
++                anchors.verticalCenter: start.verticalCenter
++
++                Rectangle {
++                    id: restartButton
++                    width: 118
++                    height: 40
++                    radius: 20
++                    color: restartHover.hovered ? "#40FFFFFF" : "#1FFFFFFF"
++                    border.width: 1
++                    border.color: "#33FFFFFF"
++
++                    Row {
++                        anchors.centerIn: parent
++                        spacing: 8
++                        Image {
++                            source: "icons/reboot.svg"
++                            width: 18
++                            height: 18
++                            fillMode: Image.PreserveAspectFit
++                            anchors.verticalCenter: parent.verticalCenter
++                        }
++                        Text {
++                            text: qsTr("Restart")
++                            color: Win8Colors.Text
++                            font.pixelSize: 14
++                            anchors.verticalCenter: parent.verticalCenter
++                        }
++                    }
++
++                    HoverHandler { id: restartHover }
++                    MouseArea {
++                        anchors.fill: parent
++                        cursorShape: Qt.PointingHandCursor
++                        onClicked: confirmDialog.ask(
++                            qsTr("Restart the computer?"),
++                            function() { powerControl.reboot() }
++                        )
++                    }
++                }
++
++                Rectangle {
++                    id: shutdownButton
++                    width: 128
++                    height: 40
++                    radius: 20
++                    color: shutdownHover.hovered ? "#40FFFFFF" : "#1FFFFFFF"
++                    border.width: 1
++                    border.color: "#33FFFFFF"
++
++                    Row {
++                        anchors.centerIn: parent
++                        spacing: 8
++                        Image {
++                            source: "icons/shutdown.svg"
++                            width: 18
++                            height: 18
++                            fillMode: Image.PreserveAspectFit
++                            anchors.verticalCenter: parent.verticalCenter
++                        }
++                        Text {
++                            text: qsTr("Shut down")
++                            color: Win8Colors.Text
++                            font.pixelSize: 14
++                            anchors.verticalCenter: parent.verticalCenter
++                        }
++                    }
++
++                    HoverHandler { id: shutdownHover }
++                    MouseArea {
++                        anchors.fill: parent
++                        cursorShape: Qt.PointingHandCursor
++                        onClicked: confirmDialog.ask(
++                            qsTr("Shut down the computer?"),
++                            function() { powerControl.shutdown() }
++                        )
++                    }
++                }
++            }
++
+             // the user icon at top right hosts power menu and settings.
+             Item {
+                 id: userCard

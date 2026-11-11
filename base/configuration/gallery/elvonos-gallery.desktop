@@ -1,0 +1,25 @@
+[Desktop Entry]
+Type=Application
+Name=Gallery
+Name[de]=Galerie
+Name[fr]=Galerie
+Name[es]=Galería
+Name[it]=Galleria
+Name[pt]=Galeria
+Name[nl]=Galerij
+Name[pl]=Galeria
+Name[ru]=Галерея
+Name[tr]=Galeri
+Name[uk]=Галерея
+Name[cs]=Galerie
+Name[sv]=Galleri
+Name[zh_CN]=画廊
+Name[ja]=ギャラリー
+GenericName=Photo Viewer
+Comment=Browse and view Linux and Android photos
+Exec=elvonos-gallery
+Icon=org.gnome.eog
+Terminal=false
+StartupNotify=true
+Categories=Graphics;Photography;Viewer;
+Keywords=photo;image;gallery;android;waydroid;
