@@ -55,7 +55,7 @@ ElvonOS is a distribution. Only the following parts are forked or rebuilt;
 everything else is used as shipped by Debian.
 
 - **Win8DE shell** — forked at a pinned upstream commit and patched with
-  **18 patches** (modern taskbar, Start widgets, Aero/frosted glass, live tiles,
+  **19 patches** (modern taskbar, Start widgets, Aero/frosted glass, live tiles,
   Flatpak icons, window-switcher sync, **always-visible Restart/Shut down
   buttons**, stale-lock handling). Patches: `build/win8de/patches/`.
 - **Waydroid** — upstream 1.6.3 source vendored; service unit patched (Binder
@@ -110,7 +110,8 @@ documented here first.
 - Waydroid multi-window integration and Android app icons in the Start menu.
 - Built-in terminal with Android shell support.
 - Health layer (`elvonos-healthd`) and Settings **Condition** card.
-- Free, signed update feed (GitHub + Codeberg) with SourceForge downloads.
+- Free, signed update feed with **SourceForge as primary** origin and
+  GitHub/Codeberg mirrors.
 
 ## Install
 
@@ -129,7 +130,9 @@ documented here first.
 5. Reboot and log in with your account.
 
 All drivers and firmware are included. Optional software is installed on the
-first boot when online. Details: [Live installer](documentation/13-live-installer.md).
+first boot when online. The 1.0.3 ISO is the current installation image; the
+signed updater delivers the current software line (`elvonos-apps 1.0.7-5`).
+Details: [Live installer](documentation/13-live-installer.md).
 
 ## Updates
 
@@ -140,9 +143,11 @@ elvonos-update apply      # OS packages + signed ElvonOS payloads/components
 ```
 
 `apply` upgrades Debian packages, installs signed ElvonOS software payloads and
-runs setup components (for example Flathub for the Store). A new ISO is needed
-only for kernel, bootloader or live-image changes. The public key is at
-`/usr/share/elvonos/update/elvonos.pub`. Details:
+runs setup components (for example Flathub for the Store). Updates are staged
+in the background and installed on shutdown/reboot. A new ISO is needed only
+for kernel, bootloader or live-image changes. The public key is at
+`/usr/share/elvonos/update/elvonos.pub`. Current component versions:
+`elvonos-apps 1.0.7-5`, `flatpak-store 1`, `zz-auto-updates 2`. Details:
 [Free updates](documentation/15-free-updates.md).
 
 ## Repository layout
@@ -176,7 +181,8 @@ Build host: Debian 13 (or WSL2 with Debian 13).
 sudo bash build/phase1/build-rootfs.sh     # Debian rootfs
 sudo bash build/kernel/build-kernel.sh     # 6.12.116-elvonos
 sudo bash build/win8de/build-win8de.sh --install-rootfs
-sudo bash build/phase7/build-iso.sh        # build/out/ElvonOS-1.0.0-amd64.iso
+ELVONOS_VERSION=1.0.3 sudo -E bash build/phase7/build-iso.sh
+# → build/out/ElvonOS-1.0.3-amd64.iso
 ```
 
 ## Documentation
