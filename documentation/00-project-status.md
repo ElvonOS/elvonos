@@ -594,6 +594,10 @@ The default Start layout was also adjusted: Aurora takes the former Foot slot, D
 - **Software update 1.0.4-2**: Settings → Updates now shows the last check
   time, OS/component counts, a live log and the ISO hint; `elvonos-update log`
   reads user/root logs. Delivered as a signed payload on top of 1.0.3.
+- **Source code published (2026-11-11)**: GitHub
+  <https://github.com/ElvonOS/elvonos> (primary), Codeberg mirror
+  <https://codeberg.org/ElvonOS/elvonos>, and a signed
+  `ElvonOS-1.0.7-src.tar.zst` in the SourceForge release directory.
 - **Next release (planned)**: **1.0.4** — remaining hardening (U6 test matrix),
   delta ISO updates, channels, Store update-all and SBOM. Details:
   `documentation/17-release-plan.md`.

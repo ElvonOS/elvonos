@@ -10,6 +10,10 @@ for Android apps.
 
 - Downloads: <https://sourceforge.net/projects/elvonos/files/>
 - Screenshots: <https://sourceforge.net/projects/elvonos/files/screenshots/>
+- **Source code: <https://github.com/ElvonOS/elvonos>** ·
+  mirror <https://codeberg.org/ElvonOS/elvonos>
+- Source tarball:
+  <https://downloads.sourceforge.net/project/elvonos/releases/1.0.7/ElvonOS-1.0.7-src.tar.zst>
 - Update feed: <https://downloads.sourceforge.net/project/elvonos/feeds/stable.json>
 - Feed mirror: <https://github.com/ElvonOS/elvonos-updates>
 - Feed mirror: <https://codeberg.org/ElvonOS/elvonos-updates>
@@ -142,6 +146,9 @@ only for kernel, bootloader or live-image changes. The public key is at
 [Free updates](documentation/15-free-updates.md).
 
 ## Repository layout
+
+The full source is published on **GitHub** (`ElvonOS/elvonos`) and mirrored on
+**Codeberg**; every release also ships a signed source tarball on SourceForge.
 
 ```
 ElvonOS/
