@@ -36,6 +36,9 @@ while IFS= read -r f; do paths+=("$f"); done < <(
     find usr/bin -maxdepth 1 -type f \( -name 'elvonos-*' -o -name 'Win8*' \) -print
 )
 while IFS= read -r f; do paths+=("$f"); done < <(
+    find usr/local/bin -maxdepth 1 -type f -name 'Win8*' -print 2>/dev/null
+)
+while IFS= read -r f; do paths+=("$f"); done < <(
     find usr/share/icons -type f \( -name 'elvonos-*' -o -name 'Win8*' \) -print 2>/dev/null
 )
 

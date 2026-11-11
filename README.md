@@ -24,7 +24,7 @@ for Android apps.
 
 ### Start screen — Restart / Shut down
 
-![Start screen with Restart and Shut down](https://raw.githubusercontent.com/ElvonOS/elvonos-updates/main/screenshots/start-menu-1.0.7.png)
+![Start screen with Restart and Shut down](https://raw.githubusercontent.com/ElvonOS/elvonos-updates/main/screenshots/start-menu-1.0.7-7.png)
 
 ### Installer (English)
 
