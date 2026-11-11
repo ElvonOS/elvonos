@@ -1,0 +1,950 @@
+#!/bin/bash
+# ElvonOS Waydroid image manager.
+#
+# Manages the Android images used by Waydroid:
+#   - list/download verified Android 16/17 images (WayDroid-ATV builds)
+#   - install images from a release zip, the live medium, or local files
+#   - create a custom image pair (overlay files, extra APKs) and repack it
+#   - report the installed/current Android version
+#
+# Root is required for install/create/repack. Images are installed to
+# /etc/waydroid-extra/images, the path Waydroid treats as preinstalled.
+set -euo pipefail
+
+CATALOG="${ELVONOS_WAYDROID_CATALOG:-/usr/share/elvonos/waydroid/images.json}"
+IMAGES_DIR="${ELVONOS_WAYDROID_IMAGES_DIR:-/etc/waydroid-extra/images}"
+METADATA="$IMAGES_DIR/elvonos-image.json"
+STATE_DIR="/var/lib/elvonos/waydroid"
+BACKUP_DIR="$STATE_DIR/backups"
+LIVE_IMAGES="/run/live/medium/elvonos/waydroid"
+DEFAULT_CACHE="/var/cache/elvonos/waydroid"
+
+log()  { printf '==> %s\n' "$*"; }
+warn() { printf 'Warning: %s\n' "$*" >&2; }
+die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+    cat <<'EOF'
+ElvonOS Waydroid image manager
+
+Usage:
+  elvonos-waydroid-image status [--hash]
+  elvonos-waydroid-image list
+  elvonos-waydroid-image download <id> [--dir DIR]
+  elvonos-waydroid-image install <id> [options]
+  elvonos-waydroid-image install --from-medium [--id ID]
+  elvonos-waydroid-image install --system FILE --vendor FILE [--id ID]
+  elvonos-waydroid-image create --name NAME --system FILE --vendor FILE [options]
+  elvonos-waydroid-image repack [options]
+  elvonos-waydroid-image verify <zip|image> [--vendor FILE]
+
+Image IDs:
+  android16    Android 16 / LineageOS 23.2 QPR2 (default, shipped in ElvonOS)
+  android17    Android 17 / LineageOS 24.0 QPR0
+
+Install options:
+  --zip-dir DIR     Use already downloaded zips from DIR
+  --from-medium     Copy the images bundled on the live medium
+  --system FILE     Use a local system image (raw, sparse or EROFS)
+  --vendor FILE     Use a local vendor image (raw, sparse or ext4)
+  --id ID           Record ID for local images (default: custom)
+  --yes             Do not prompt
+  --keep-config     Keep /var/lib/waydroid/waydroid.cfg
+  --reset-data      Also delete Android user data (irreversible!)
+
+Create/repack options:
+  --name NAME       Image name recorded in the manifest
+  --overlay DIR     Directory with system/ and/or vendor/ trees to merge
+  --apk FILE        Add an APK to system/app (repeatable)
+  --android N       Android version recorded in the manifest
+  --output FILE     Output zip (default: /var/cache/elvonos/waydroid/NAME.zip)
+  --workdir DIR     Work directory (must support SELinux xattrs)
+  --keep-work       Keep the work directory
+  --no-verify       Skip the final fsck pass
+
+The created zip contains system.img, vendor.img, SHA256SUMS and
+elvonos-image.json and can be installed with:
+  elvonos-waydroid-image install --system system.img --vendor vendor.img
+or by extracting it into /etc/waydroid-extra/images.
+EOF
+}
+
+need_root() {
+    [ "$(id -u)" -eq 0 ] || die "this command needs root (use sudo)"
+}
+
+need_catalog() {
+    [ -r "$CATALOG" ] || die "image catalog not found: $CATALOG"
+    command -v jq >/dev/null 2>&1 || die "jq is required"
+}
+
+catalog_ids() {
+    jq -r '.images | keys[]' "$CATALOG"
+}
+
+catalog_field() {
+    jq -r --arg id "$1" --arg key "$2" '.images[$id][$key] // empty' "$CATALOG"
+}
+
+catalog_pair_field() {
+    jq -r --arg id "$1" --arg part "$2" --arg key "$3" \
+        '.images[$id][$part][$key] // empty' "$CATALOG"
+}
+
+default_id() {
+    jq -r '.default // "android16"' "$CATALOG"
+}
+
+catalog_cache_dir() {
+    jq -r '.cache_dir // empty' "$CATALOG" 2>/dev/null || true
+}
+
+human_size() {
+    numfmt --to=iec-i --suffix=B "$1" 2>/dev/null || printf '%s B' "$1"
+}
+
+is_sparse() {
+    [ "$(od -An -tx1 -N4 "$1" | tr -d ' \n')" = "3aff26ed" ]
+}
+
+detect_fs() {
+    local img="$1" out
+    if is_sparse "$img"; then echo sparse; return; fi
+    out=$(file -b "$img" 2>/dev/null || true)
+    case "$out" in
+        *EROFS*) echo erofs ;;
+        *ext2*|*ext3*|*ext4*) echo ext4 ;;
+        *Android\ sparse*) echo sparse ;;
+        *) echo unknown ;;
+    esac
+}
+
+fs_label() {
+    case "$1" in
+        erofs) echo "EROFS (read-only, LZ4)" ;;
+        ext4)  echo "ext4" ;;
+        sparse) echo "Android sparse" ;;
+        *) echo "unknown" ;;
+    esac
+}
+
+check_image() {
+    local img="$1" fs="$2"
+    case "$fs" in
+        erofs) fsck.erofs "$img" >/dev/null 2>&1 ;;
+        ext4)  e2fsck -fn "$img" >/dev/null 2>&1 ;;
+        *) return 1 ;;
+    esac
+}
+
+sha256_of() {
+    sha256sum "$1" | cut -d' ' -f1
+}
+
+make_zip() {
+    local out="$1" dir="$2"
+    shift 2
+    if command -v zip >/dev/null 2>&1; then
+        ( cd "$dir" && zip -q -6 "$out" "$@" )
+        return
+    fi
+    python3 - "$out" "$dir" "$@" <<'PY'
+import os, sys, zipfile
+out, base = sys.argv[1], sys.argv[2]
+files = sys.argv[3:]
+with zipfile.ZipFile(out, "w", allowZip64=True) as archive:
+    for name in files:
+        path = os.path.join(base, name)
+        # EROFS images are already LZ4-compressed; ext4 images are not.
+        if name == "system.img":
+            archive.write(path, arcname=name, compress_type=zipfile.ZIP_STORED)
+        else:
+            archive.write(path, arcname=name, compress_type=zipfile.ZIP_DEFLATED,
+                          compresslevel=6)
+PY
+}
+
+confirm() {
+    local prompt="$1"
+    if [ "${ASSUME_YES:-0}" = "1" ] || [ ! -t 0 ]; then
+        return 0
+    fi
+    read -r -p "$prompt [y/N] " answer
+    case "$answer" in
+        y|Y|yes|YES) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+confirm_destructive() {
+    local prompt="$1"
+    if [ "${ASSUME_YES:-0}" = "1" ]; then
+        return 0
+    fi
+    [ -t 0 ] || return 1
+    read -r -p "$prompt Type YES to continue: " answer
+    [ "$answer" = "YES" ]
+}
+
+stop_waydroid() {
+    log "Stopping Waydroid session and container"
+    pkill -f '[w]aydroid show-full-ui' 2>/dev/null || true
+    pkill -f '[w]aydroid session' 2>/dev/null || true
+    systemctl stop waydroid-container.service 2>/dev/null || true
+    sleep 2
+}
+
+reset_runtime_state() {
+    local keep_cfg="$1"
+    umount -R /var/lib/waydroid/rootfs 2>/dev/null || true
+    rm -rf /var/lib/waydroid/overlay \
+           /var/lib/waydroid/overlay_rw \
+           /var/lib/waydroid/overlay_work 2>/dev/null || true
+    if [ "$keep_cfg" != "1" ]; then
+        rm -f /var/lib/waydroid/waydroid.cfg \
+              /var/lib/waydroid/waydroid.prop \
+              /var/lib/waydroid/waydroid_base.prop 2>/dev/null || true
+    fi
+}
+
+# --- status / list ----------------------------------------------------------
+
+cmd_status() {
+    local hash=0
+    [ "${1:-}" = "--hash" ] && hash=1
+
+    local dir="$IMAGES_DIR"
+    if [ -r /var/lib/waydroid/waydroid.cfg ]; then
+        local cfg_dir
+        cfg_dir=$(sed -n 's/^images_path *= *//p' /var/lib/waydroid/waydroid.cfg | head -n1)
+        [ -n "$cfg_dir" ] && dir="$cfg_dir"
+    fi
+
+    echo "ElvonOS Waydroid images"
+    echo "  image directory: $dir"
+    if [ -f "$METADATA" ]; then
+        echo "  image name:      $(jq -r '.name // "-"' "$METADATA")"
+        echo "  image id:        $(jq -r '.id // "-"' "$METADATA")"
+        echo "  android:         $(jq -r '.android // "-"' "$METADATA") (SDK $(jq -r '.sdk // "-"' "$METADATA"))"
+        echo "  created:         $(jq -r '.created // "-"' "$METADATA")"
+    fi
+
+    local img name fs size
+    for name in system.img vendor.img; do
+        img="$dir/$name"
+        if [ -e "$img" ]; then
+            fs=$(detect_fs "$img")
+            size=$(stat -Lc %s "$img")
+            printf '  %-11s %-22s %10s' "$name" "$(fs_label "$fs")" "$(human_size "$size")"
+            if [ "$hash" = "1" ]; then
+                printf '  %s' "$(sha256_of "$img")"
+            fi
+            printf '\n'
+        else
+            printf '  %-11s %s\n' "$name" "missing"
+        fi
+    done
+
+    if command -v waydroid >/dev/null 2>&1; then
+        echo
+        waydroid status 2>&1 | sed 's/^/  /' || true
+    fi
+
+    if [ -f /etc/elvonos-release ]; then
+        echo
+        echo "  ElvonOS:         $(sed -n 's/^VERSION=//p' /etc/elvonos-release)"
+    fi
+}
+
+cmd_list() {
+    need_catalog
+    local installed=""
+    [ -f "$METADATA" ] && installed=$(jq -r '.id // empty' "$METADATA" 2>/dev/null || true)
+
+    printf '%-12s %-36s %-8s %10s  %s\n' ID NAME ANDROID DOWNLOAD STATUS
+    local id label android size
+    for id in $(catalog_ids); do
+        label=$(catalog_field "$id" label)
+        android=$(catalog_field "$id" android)
+        size=$(( $(catalog_pair_field "$id" system size) + $(catalog_pair_field "$id" vendor size) ))
+        local state="-"
+        [ "$id" = "$installed" ] && state="installed"
+        printf '%-12s %-36s %-8s %10s  %s\n' "$id" "$label" "$android" "$(human_size "$size")" "$state"
+    done
+    echo
+    echo "Default: $(default_id). Install with: sudo elvonos-waydroid-image install $(default_id)"
+}
+
+# --- download ---------------------------------------------------------------
+
+download_one() {
+    local url="$1" sha="$2" size="$3" dest="$4"
+    if [ -f "$dest" ] && [ "$(sha256_of "$dest")" = "$sha" ]; then
+        log "Using cached $(basename "$dest")"
+        return 0
+    fi
+    mkdir -p "$(dirname "$dest")"
+    log "Downloading $(basename "$dest") ($(human_size "$size"))"
+    curl -fL --retry 3 --retry-delay 2 --continue-at - -o "$dest.part" "$url"
+    mv -f "$dest.part" "$dest"
+    log "Verifying SHA256"
+    local got
+    got=$(sha256_of "$dest")
+    if [ "$got" != "$sha" ]; then
+        rm -f "$dest"
+        die "checksum mismatch for $(basename "$dest"): got $got, expected $sha"
+    fi
+}
+
+cmd_download() {
+    local id="${1:?Usage: elvonos-waydroid-image download <id> [--dir DIR]}"
+    shift
+    need_catalog
+    local dir="$DEFAULT_CACHE"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dir) dir="${2:?--dir needs a value}"; shift 2 ;;
+            -h|--help) usage; exit 0 ;;
+            *) die "unknown option: $1" ;;
+        esac
+    done
+    [ -n "$(catalog_field "$id" label)" ] || die "unknown image id: $id"
+    [ "$(id -u)" -eq 0 ] || warn "downloading to $dir may need root"
+
+    local sys_url sys_sha sys_size ven_url ven_sha ven_size sys_name ven_name
+    sys_url=$(catalog_pair_field "$id" system url)
+    sys_sha=$(catalog_pair_field "$id" system sha256)
+    sys_size=$(catalog_pair_field "$id" system size)
+    ven_url=$(catalog_pair_field "$id" vendor url)
+    ven_sha=$(catalog_pair_field "$id" vendor sha256)
+    ven_size=$(catalog_pair_field "$id" vendor size)
+    sys_name=$(basename "$sys_url")
+    ven_name=$(basename "$ven_url")
+
+    download_one "$sys_url" "$sys_sha" "$sys_size" "$dir/$sys_name"
+    download_one "$ven_url" "$ven_sha" "$ven_size" "$dir/$ven_name"
+    printf '%s  %s\n%s  %s\n' "$sys_sha" "$sys_name" "$ven_sha" "$ven_name" \
+        > "$dir/$id-SHA256SUMS"
+    echo
+    echo "Downloaded to $dir"
+}
+
+# --- install ----------------------------------------------------------------
+
+write_metadata() {
+    local id="$1" android="$2" sdk="$3" name="$4" sys_sha="$5" ven_sha="$6"
+    mkdir -p "$IMAGES_DIR"
+    python3 - "$METADATA" "$id" "$android" "$sdk" "$name" "$sys_sha" "$ven_sha" <<'PY'
+import datetime, json, sys
+path, ident, android, sdk, name, sys_sha, ven_sha = sys.argv[1:8]
+data = {
+    "id": ident,
+    "name": name,
+    "android": android,
+    "sdk": int(sdk) if str(sdk).isdigit() else sdk,
+    "created": datetime.datetime.now(datetime.timezone.utc)
+                .strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "system": {"file": "system.img", "sha256": sys_sha},
+    "vendor": {"file": "vendor.img", "sha256": ven_sha},
+    "managed_by": "elvonos-waydroid-image",
+}
+with open(path, "w") as handle:
+    handle.write(json.dumps(data, indent=2) + "\n")
+PY
+}
+
+install_images() {
+    local src_sys="$1" src_ven="$2" id="$3" name="$4" android="$5" sdk="$6"
+    local keep_cfg="${7:-0}"
+
+    local fs_sys fs_ven
+    fs_sys=$(detect_fs "$src_sys")
+    fs_ven=$(detect_fs "$src_ven")
+    [ "$fs_sys" != "unknown" ] || die "unsupported system image format: $src_sys"
+    [ "$fs_ven" != "unknown" ] || die "unsupported vendor image format: $src_ven"
+    [ "$fs_sys" = "erofs" ] || [ "$fs_sys" = "ext4" ] || [ "$fs_sys" = "sparse" ] || \
+        die "unsupported system image: $fs_sys"
+    [ "$fs_ven" = "ext4" ] || [ "$fs_ven" = "erofs" ] || [ "$fs_ven" = "sparse" ] || \
+        die "unsupported vendor image: $fs_ven"
+
+    log "Validating images"
+    local tmpv=""
+    if [ "$fs_ven" = "sparse" ]; then
+        tmpv=$(mktemp "${TMPDIR:-/var/tmp}/vendor-raw.XXXXXX")
+        simg2img "$src_ven" "$tmpv"
+        fs_ven=$(detect_fs "$tmpv")
+        src_ven="$tmpv"
+    fi
+    check_image "$src_sys" "$fs_sys" || warn "system image fsck reported problems"
+    check_image "$src_ven" "$fs_ven" || warn "vendor image fsck reported problems"
+
+    stop_waydroid
+    mkdir -p "$IMAGES_DIR"
+
+    local backup=""
+    if [ -e "$IMAGES_DIR/system.img" ] || [ -e "$IMAGES_DIR/vendor.img" ]; then
+        backup="$BACKUP_DIR/$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "$backup"
+        log "Moving previous images to $backup"
+        for f in system.img vendor.img elvonos-image.json; do
+            [ -e "$IMAGES_DIR/$f" ] && mv -f "$IMAGES_DIR/$f" "$backup/"
+        done
+    fi
+
+    log "Installing system image"
+    if [ "$fs_sys" = "sparse" ]; then
+        simg2img "$src_sys" "$IMAGES_DIR/.system.img.new"
+    else
+        cp --sparse=always "$src_sys" "$IMAGES_DIR/.system.img.new"
+    fi
+    log "Installing vendor image"
+    cp --sparse=always "$src_ven" "$IMAGES_DIR/.vendor.img.new"
+
+    check_image "$IMAGES_DIR/.system.img.new" "$(detect_fs "$IMAGES_DIR/.system.img.new")" || \
+        { rm -f "$IMAGES_DIR/.system.img.new" "$IMAGES_DIR/.vendor.img.new"; die "installed system image failed verification"; }
+    check_image "$IMAGES_DIR/.vendor.img.new" "$(detect_fs "$IMAGES_DIR/.vendor.img.new")" || \
+        { rm -f "$IMAGES_DIR/.system.img.new" "$IMAGES_DIR/.vendor.img.new"; die "installed vendor image failed verification"; }
+
+    mv -f "$IMAGES_DIR/.system.img.new" "$IMAGES_DIR/system.img"
+    mv -f "$IMAGES_DIR/.vendor.img.new" "$IMAGES_DIR/vendor.img"
+    chmod 644 "$IMAGES_DIR/system.img" "$IMAGES_DIR/vendor.img"
+
+    local sys_sha ven_sha
+    sys_sha=$(sha256_of "$IMAGES_DIR/system.img")
+    ven_sha=$(sha256_of "$IMAGES_DIR/vendor.img")
+    write_metadata "$id" "$android" "$sdk" "$name" "$sys_sha" "$ven_sha"
+
+    reset_runtime_state "$keep_cfg"
+
+    if command -v waydroid >/dev/null 2>&1; then
+        log "Initializing Waydroid with the new images"
+        waydroid init -f || warn "waydroid init -f failed; run it manually after the next login"
+    else
+        warn "waydroid is not installed; images were installed only"
+    fi
+
+    [ -n "$tmpv" ] && rm -f "$tmpv" || true
+
+    echo
+    echo "Installed $name ($id), Android $android"
+    echo "  system: $IMAGES_DIR/system.img  $sys_sha"
+    echo "  vendor: $IMAGES_DIR/vendor.img  $ven_sha"
+    [ -n "$backup" ] && echo "  previous images: $backup"
+    echo
+    echo "Start Android from the application menu or with:"
+    echo "  waydroid session start"
+}
+
+extract_zip_member() {
+    local zip="$1" member="$2" dest="$3" expected_sha="$4"
+    log "Extracting $member"
+    unzip -p "$zip" "$member" > "$dest"
+    local got
+    got=$(sha256_of "$dest")
+    if [ -n "$expected_sha" ] && [ "$got" != "$expected_sha" ]; then
+        rm -f "$dest"
+        die "$member does not match the SHA256 recorded in the catalog"
+    fi
+}
+
+cmd_install() {
+    need_root
+    need_catalog
+
+    local id="" zip_dir="" from_medium=0 sys_file="" ven_file=""
+    local keep_cfg=0 reset_data=0 opt_name="" opt_android="" opt_sdk=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --zip-dir) zip_dir="${2:?--zip-dir needs a value}"; shift 2 ;;
+            --from-medium) from_medium=1; shift ;;
+            --system) sys_file="${2:?--system needs a value}"; shift 2 ;;
+            --vendor) ven_file="${2:?--vendor needs a value}"; shift 2 ;;
+            --id) id="${2:?--id needs a value}"; shift 2 ;;
+            --name) opt_name="${2:?--name needs a value}"; shift 2 ;;
+            --android) opt_android="${2:?--android needs a value}"; shift 2 ;;
+            --sdk) opt_sdk="${2:?--sdk needs a value}"; shift 2 ;;
+            --keep-config) keep_cfg=1; shift ;;
+            --reset-data) reset_data=1; shift ;;
+            --yes|-y) ASSUME_YES=1; shift ;;
+            -h|--help) usage; exit 0 ;;
+            -*) die "unknown option: $1" ;;
+            *) id="$1"; shift ;;
+        esac
+    done
+
+    if [ "$from_medium" = "1" ]; then
+        [ -f "$LIVE_IMAGES/system.img" ] || die "no images on the live medium ($LIVE_IMAGES)"
+        [ -f "$LIVE_IMAGES/vendor.img" ] || die "no vendor image on the live medium"
+        id="${id:-bundled}"
+        local android sdk name
+        android="16"; sdk="36"; name="ElvonOS bundled Android 16"
+        if [ -f "$LIVE_IMAGES/elvonos-image.json" ]; then
+            local meta="$LIVE_IMAGES/elvonos-image.json"
+            id=$(jq -r '.id // "bundled"' "$meta")
+            android=$(jq -r '.android // "16"' "$meta")
+            sdk=$(jq -r '.sdk // "36"' "$meta")
+            name=$(jq -r '.name // "ElvonOS bundled Android 16"' "$meta")
+        fi
+        [ -n "$opt_name" ] && name="$opt_name"
+        [ -n "$opt_android" ] && android="$opt_android"
+        [ -n "$opt_sdk" ] && sdk="$opt_sdk"
+        if [ "$reset_data" = "1" ]; then
+            confirm_destructive "Delete all Android user data in /var/lib/waydroid/data?" || die "aborted"
+            rm -rf /var/lib/waydroid/data
+        fi
+        install_images "$LIVE_IMAGES/system.img" "$LIVE_IMAGES/vendor.img" \
+            "$id" "$name" "$android" "$sdk" "$keep_cfg"
+        return
+    fi
+
+    if [ -n "$sys_file" ] || [ -n "$ven_file" ]; then
+        [ -f "${sys_file:?--system and --vendor are both required}" ] || die "system image not found: $sys_file"
+        [ -f "${ven_file:?--system and --vendor are both required}" ] || die "vendor image not found: $ven_file"
+        id="${id:-custom}"
+        local android sdk name
+        android="16"; sdk="36"; name="Custom Waydroid image"
+        [ -f "$METADATA" ] && android=$(jq -r '.android // "16"' "$METADATA")
+        [ -f "$METADATA" ] && sdk=$(jq -r '.sdk // "36"' "$METADATA")
+        [ -n "$opt_name" ] && name="$opt_name"
+        [ -n "$opt_android" ] && android="$opt_android"
+        [ -n "$opt_sdk" ] && sdk="$opt_sdk"
+        if [ "$reset_data" = "1" ]; then
+            confirm_destructive "Delete all Android user data in /var/lib/waydroid/data?" || die "aborted"
+            rm -rf /var/lib/waydroid/data
+        fi
+        install_images "$sys_file" "$ven_file" "$id" "$name" "$android" "$sdk" "$keep_cfg"
+        return
+    fi
+
+    id="${id:-$(default_id)}"
+    [ -n "$(catalog_field "$id" label)" ] || die "unknown image id: $id (see: elvonos-waydroid-image list)"
+
+    local name android sdk sys_url ven_url sys_sha ven_sha sys_name ven_name
+    name=$(catalog_field "$id" label)
+    android=$(catalog_field "$id" android)
+    sdk=$(catalog_field "$id" sdk)
+    sys_url=$(catalog_pair_field "$id" system url)
+    ven_url=$(catalog_pair_field "$id" vendor url)
+    sys_sha=$(catalog_pair_field "$id" system sha256)
+    ven_sha=$(catalog_pair_field "$id" vendor sha256)
+    sys_name=$(basename "$sys_url")
+    ven_name=$(basename "$ven_url")
+
+    local cache="$zip_dir"
+    [ -n "$cache" ] || cache=$(catalog_cache_dir)
+    [ -n "$cache" ] || cache="$DEFAULT_CACHE"
+
+    local sys_zip="$cache/$sys_name" ven_zip="$cache/$ven_name"
+    if [ ! -f "$sys_zip" ] || [ "$(sha256_of "$sys_zip")" != "$sys_sha" ]; then
+        [ -n "$zip_dir" ] && die "missing or invalid $sys_zip"
+        cmd_download "$id" --dir "$cache"
+    fi
+
+    local work
+    work=$(mktemp -d "${TMPDIR:-/var/tmp}/elvonos-waydroid-extract.XXXXXXXX")
+    trap "rm -rf '$work'" EXIT
+
+    extract_zip_member "$sys_zip" system.img "$work/system.img" ""
+    extract_zip_member "$ven_zip" vendor.img "$work/vendor.img" ""
+
+    if [ "$reset_data" = "1" ]; then
+        confirm_destructive "Delete all Android user data in /var/lib/waydroid/data?" || die "aborted"
+        rm -rf /var/lib/waydroid/data
+    fi
+    install_images "$work/system.img" "$work/vendor.img" "$id" "$name" \
+        "$android" "$sdk" "$keep_cfg"
+}
+
+# --- create / repack --------------------------------------------------------
+
+xattr_supported() {
+    local dir="$1"
+    touch "$dir/.xattr-test" 2>/dev/null || return 1
+    if setfattr -n security.selinux -v "u:object_r:system_file:s0" \
+            "$dir/.xattr-test" 2>/dev/null; then
+        rm -f "$dir/.xattr-test"
+        return 0
+    fi
+    rm -f "$dir/.xattr-test"
+    return 1
+}
+
+grow_ext4() {
+    local img="$1" needed="$2"
+    local block_size free_bytes add
+    block_size=$(dumpe2fs -h "$img" 2>/dev/null | sed -n 's/^Block size: *//p')
+    free_bytes=$(dumpe2fs "$img" 2>/dev/null | sed -n 's/^Free blocks: *//p')
+    [ -n "$block_size" ] && [ -n "$free_bytes" ] || return 1
+    local free=$(( free_bytes * block_size ))
+    if [ "$needed" -le "$free" ]; then
+        return 0
+    fi
+    add=$(( needed - free + 64*1024*1024 ))
+    add=$(( (add + 1024*1024 - 1) / (1024*1024) * 1024*1024 ))
+    log "Growing ext4 image by $(human_size "$add")"
+    truncate -s "+$add" "$img"
+    e2fsck -fy "$img" >/dev/null 2>&1 || true
+    resize2fs "$img" >/dev/null
+}
+
+apply_overlay_tree() {
+    local overlay="$1" target="$2" label="$3" selinux="${4:-}"
+    if [ -d "$overlay/$label" ]; then
+        log "Adding overlay/$label"
+        rsync -aHAX --numeric-ids "$overlay/$label/" "$target/"
+        if [ -n "$selinux" ]; then
+            label_overlay_files "$overlay/$label" "$target" "$selinux"
+        fi
+    fi
+}
+
+label_overlay_files() {
+    local source="$1" target="$2" context="$3" rel dest
+    [ -d "$source" ] || return 0
+    find "$source" -type f -print0 | while IFS= read -r -d '' rel; do
+        rel="${rel#"$source"/}"
+        dest="$target/$rel"
+        [ -f "$dest" ] || continue
+        if ! getfattr -n security.selinux "$dest" >/dev/null 2>&1; then
+            setfattr -n security.selinux -v "$context" "$dest" 2>/dev/null || true
+        fi
+    done
+    return 0
+}
+
+apply_system_overlay_erofs() {
+    local overlay="$1" tree="$2" part
+    for part in system system_ext product odm vendor_dlkm; do
+        if [ -d "$overlay/$part" ]; then
+            log "Adding overlay/$part"
+            rsync -aHAX --numeric-ids "$overlay/$part/" "$tree/$part/"
+            label_overlay_files "$overlay/$part" "$tree/$part" \
+                "u:object_r:system_file:s0"
+        fi
+    done
+}
+
+write_image_props() {
+    local system_root="$1" name="$2" android="$3"
+    [ -d "$system_root/etc" ] || return 0
+    {
+        echo "# Generated by elvonos-waydroid-image"
+        echo "ro.elvonos.image.name=$name"
+        echo "ro.elvonos.image.android=$android"
+        echo "ro.elvonos.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$system_root/etc/elvonos-image.prop"
+    chmod 644 "$system_root/etc/elvonos-image.prop"
+    setfattr -n security.selinux -v "u:object_r:system_file:s0" \
+        "$system_root/etc/elvonos-image.prop" 2>/dev/null || true
+}
+
+inject_apks() {
+    local system_root="$1"
+    shift
+    local apk base name dest
+    for apk in "$@"; do
+        [ -f "$apk" ] || die "APK not found: $apk"
+        base=$(basename "$apk")
+        name="${base%.apk}"
+        dest="$system_root/app/$name/$base"
+        log "Adding APK $base"
+        install -Dm644 "$apk" "$dest"
+        setfattr -n security.selinux -v "u:object_r:system_file:s0" "$dest" 2>/dev/null || \
+            warn "could not set SELinux label on $dest"
+    done
+}
+
+build_system_image() {
+    local src="$1" overlay="$2" out="$3" work="$4" name="$5" android="$6"
+    shift 6
+    local apks=("$@")
+    local fs
+    fs=$(detect_fs "$src")
+    local raw="$src"
+
+    if [ "$fs" = "sparse" ]; then
+        log "Converting sparse system image"
+        simg2img "$src" "$work/system-raw.img"
+        raw="$work/system-raw.img"
+        fs=$(detect_fs "$raw")
+    fi
+
+    case "$fs" in
+        erofs)
+            log "Extracting EROFS system image"
+            rm -rf "$work/tree"
+            mkdir -p "$work/tree"
+            fsck.erofs --extract="$work/tree" --xattrs --preserve "$raw" >/dev/null
+            [ -n "$overlay" ] && apply_system_overlay_erofs "$overlay" "$work/tree"
+            inject_apks "$work/tree/system" "${apks[@]}"
+            write_image_props "$work/tree/system" "$name" "$android"
+            log "Rebuilding EROFS system image"
+            mkfs.erofs -zlz4hc,level=9 -C65536 -b4096 --all-root \
+                --mount-point=/ "$out" "$work/tree" >/dev/null
+            ;;
+        ext4)
+            log "Copying ext4 system image"
+            cp --sparse=always "$raw" "$out"
+            if [ -n "$overlay" ] && [ -d "$overlay/system" ]; then
+                grow_ext4 "$out" "$(du -sb "$overlay/system" | cut -f1)" || true
+            fi
+            local mnt="$work/mnt-system"
+            mkdir -p "$mnt"
+            mount -o loop,rw "$out" "$mnt"
+            if [ -n "$overlay" ]; then
+                apply_overlay_tree "$overlay" "$mnt" system "u:object_r:system_file:s0"
+            fi
+            inject_apks "$mnt" "${apks[@]}"
+            write_image_props "$mnt" "$name" "$android"
+            umount "$mnt"
+            e2fsck -fy "$out" >/dev/null 2>&1 || true
+            ;;
+        *)
+            die "unsupported system image format: $fs"
+            ;;
+    esac
+}
+
+build_vendor_image() {
+    local src="$1" overlay="$2" out="$3" work="$4"
+    local fs
+    fs=$(detect_fs "$src")
+    local raw="$src"
+    if [ "$fs" = "sparse" ]; then
+        simg2img "$src" "$work/vendor-raw.img"
+        raw="$work/vendor-raw.img"
+        fs=$(detect_fs "$raw")
+    fi
+    case "$fs" in
+        ext4)
+            log "Copying ext4 vendor image"
+            cp --sparse=always "$raw" "$out"
+            if [ -n "$overlay" ] && [ -d "$overlay/vendor" ]; then
+                grow_ext4 "$out" "$(du -sb "$overlay/vendor" | cut -f1)" || true
+            fi
+            local mnt="$work/mnt-vendor"
+            mkdir -p "$mnt"
+            mount -o loop,rw "$out" "$mnt"
+            if [ -n "$overlay" ]; then
+                apply_overlay_tree "$overlay" "$mnt" vendor "u:object_r:vendor_file:s0"
+            fi
+            umount "$mnt"
+            e2fsck -fy "$out" >/dev/null 2>&1 || true
+            ;;
+        erofs)
+            log "Extracting EROFS vendor image"
+            rm -rf "$work/vendor-tree"
+            mkdir -p "$work/vendor-tree"
+            fsck.erofs --extract="$work/vendor-tree" --xattrs --preserve "$raw" >/dev/null
+            [ -n "$overlay" ] && apply_overlay_tree "$overlay" "$work/vendor-tree" vendor "u:object_r:vendor_file:s0"
+            mkfs.erofs -zlz4hc,level=9 -C65536 -b4096 --all-root \
+                --mount-point=/ "$out" "$work/vendor-tree" >/dev/null
+            ;;
+        *)
+            die "unsupported vendor image format: $fs"
+            ;;
+    esac
+}
+
+cmd_create() {
+    need_root
+    local name="" overlay="" output="" workdir="" system="" vendor=""
+    local android="16" keep_work=0 verify=1
+    local apks=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --name) name="${2:?--name needs a value}"; shift 2 ;;
+            --overlay) overlay="${2:?--overlay needs a value}"; shift 2 ;;
+            --output) output="${2:?--output needs a value}"; shift 2 ;;
+            --workdir) workdir="${2:?--workdir needs a value}"; shift 2 ;;
+            --system) system="${2:?--system needs a value}"; shift 2 ;;
+            --vendor) vendor="${2:?--vendor needs a value}"; shift 2 ;;
+            --android) android="${2:?--android needs a value}"; shift 2 ;;
+            --apk) apks+=("${2:?--apk needs a value}"); shift 2 ;;
+            --keep-work) keep_work=1; shift ;;
+            --no-verify) verify=0; shift ;;
+            --yes|-y) ASSUME_YES=1; shift ;;
+            -h|--help) usage; exit 0 ;;
+            *) die "unknown option: $1" ;;
+        esac
+    done
+
+    [ -n "$name" ] || die "--name is required"
+    [ -f "${system:?--system is required}" ] || die "system image not found: $system"
+    [ -f "${vendor:?--vendor is required}" ] || die "vendor image not found: $vendor"
+    if [ -n "$overlay" ]; then
+        [ -d "$overlay" ] || die "overlay directory not found: $overlay"
+        [ -d "$overlay/system" ] || [ -d "$overlay/vendor" ] || \
+            die "overlay must contain system/ and/or vendor/"
+    fi
+
+    local slug
+    slug=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]\+/-/g; s/^-\+//; s/-\+$//')
+    [ -n "$slug" ] || slug="elvonos-waydroid"
+    [ -n "$output" ] || output="/var/cache/elvonos/waydroid/$slug.zip"
+    case "$output" in
+        /*) ;;
+        *) output="$PWD/$output" ;;
+    esac
+
+    if [ -n "$workdir" ]; then
+        mkdir -p "$workdir"
+        WORK=$(mktemp -d "$workdir/elvonos-waydroid-image.XXXXXXXX")
+    else
+        WORK=$(mktemp -d "${TMPDIR:-/var/tmp}/elvonos-waydroid-image.XXXXXXXX")
+    fi
+    if [ "$keep_work" = "1" ]; then
+        trap - EXIT
+    else
+        trap 'rm -rf "$WORK"' EXIT
+    fi
+    log "Work directory: $WORK"
+
+    xattr_supported "$WORK" || warn "work directory does not support SELinux xattrs; labels may be lost (use --workdir on ext4)"
+
+    local need avail
+    need=$(( $(stat -c %s "$system") + $(stat -c %s "$vendor") ))
+    avail=$(df -B1 --output=avail "$WORK" | tail -n1 | tr -d ' ')
+    if [ "$avail" -lt $(( need * 3 + 512*1024*1024 )) ]; then
+        die "not enough free space in $WORK (need about $(human_size $(( need * 3 + 512*1024*1024 ))), have $(human_size "$avail"))"
+    fi
+
+    local outdir="$WORK/out"
+    mkdir -p "$outdir"
+
+    build_system_image "$system" "$overlay" "$outdir/system.img" "$WORK" \
+        "$name" "$android" "${apks[@]}"
+    build_vendor_image "$vendor" "$overlay" "$outdir/vendor.img" "$WORK"
+
+    if [ "$verify" = "1" ]; then
+        log "Verifying created images"
+        local fs
+        fs=$(detect_fs "$outdir/system.img")
+        if [ "$fs" = "erofs" ]; then
+            fsck.erofs "$outdir/system.img" >/dev/null 2>&1 || die "created system image failed verification"
+        else
+            e2fsck -fn "$outdir/system.img" >/dev/null 2>&1 || die "created system image failed verification"
+        fi
+        fs=$(detect_fs "$outdir/vendor.img")
+        if [ "$fs" = "erofs" ]; then
+            fsck.erofs "$outdir/vendor.img" >/dev/null 2>&1 || die "created vendor image failed verification"
+        else
+            e2fsck -fn "$outdir/vendor.img" >/dev/null 2>&1 || die "created vendor image failed verification"
+        fi
+    fi
+
+    local sys_sha ven_sha created
+    sys_sha=$(sha256_of "$outdir/system.img")
+    ven_sha=$(sha256_of "$outdir/vendor.img")
+    created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    python3 - "$outdir/elvonos-image.json" "$slug" "$name" "$android" \
+        "$sys_sha" "$ven_sha" "$created" <<'PY'
+import json, sys
+path, ident, name, android, sys_sha, ven_sha, created = sys.argv[1:8]
+data = {
+    "id": ident,
+    "name": name,
+    "android": android,
+    "created": created,
+    "system": {"file": "system.img", "sha256": sys_sha},
+    "vendor": {"file": "vendor.img", "sha256": ven_sha},
+    "built_by": "elvonos-waydroid-image",
+}
+open(path, "w").write(json.dumps(data, indent=2) + "\n")
+PY
+
+    ( cd "$outdir" && sha256sum system.img vendor.img > SHA256SUMS )
+    mkdir -p "$(dirname "$output")"
+    rm -f "$output"
+    log "Writing $output"
+    make_zip "$output" "$outdir" system.img vendor.img SHA256SUMS elvonos-image.json
+
+    echo
+    echo "Created $name"
+    echo "  zip:    $output"
+    echo "  sha256: $(sha256_of "$output")"
+    echo "  system: $sys_sha"
+    echo "  vendor: $ven_sha"
+    if [ "$keep_work" = "1" ]; then
+        echo "  work:   $WORK"
+    fi
+}
+
+cmd_repack() {
+    need_root
+    local sys="" ven=""
+    [ -e "$IMAGES_DIR/system.img" ] && sys="$IMAGES_DIR/system.img"
+    [ -e "$IMAGES_DIR/vendor.img" ] && ven="$IMAGES_DIR/vendor.img"
+    [ -n "$sys" ] && [ -n "$ven" ] || die "no installed images in $IMAGES_DIR"
+    local name="Repacked Waydroid image"
+    local android="16"
+    if [ -f "$METADATA" ]; then
+        name="$(jq -r '.name // "Repacked Waydroid image"' "$METADATA") (repack)"
+        android=$(jq -r '.android // "16"' "$METADATA")
+    fi
+    cmd_create --name "$name" --system "$sys" --vendor "$ven" --android "$android" "$@"
+}
+
+# --- verify -----------------------------------------------------------------
+
+cmd_verify() {
+    local target="${1:?Usage: elvonos-waydroid-image verify <zip|image> [--vendor FILE]}"
+    shift || true
+    local vendor=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --vendor) vendor="${2:?--vendor needs a value}"; shift 2 ;;
+            -h|--help) usage; exit 0 ;;
+            *) die "unknown option: $1" ;;
+        esac
+    done
+    [ -f "$target" ] || die "file not found: $target"
+
+    case "$target" in
+        *.zip)
+            log "Checking zip archive"
+            unzip -tq "$target" || die "zip is damaged"
+            local tmp
+            tmp=$(mktemp -d "${TMPDIR:-/var/tmp}/elvonos-waydroid-verify.XXXXXXXX")
+            trap "rm -rf '$tmp'" EXIT
+            unzip -q -o "$target" -d "$tmp"
+            local f
+            for f in system.img vendor.img; do
+                [ -f "$tmp/$f" ] || die "zip does not contain $f"
+                local fs
+                fs=$(detect_fs "$tmp/$f")
+                printf '%-10s %-20s %10s  ' "$f" "$(fs_label "$fs")" "$(human_size "$(stat -c %s "$tmp/$f")")"
+                if check_image "$tmp/$f" "$fs"; then echo OK; else echo FAILED; exit 1; fi
+            done
+            if [ -f "$tmp/SHA256SUMS" ]; then
+                ( cd "$tmp" && sha256sum -c SHA256SUMS )
+            fi
+            ;;
+        *)
+            local fs
+            fs=$(detect_fs "$target")
+            printf '%-10s %-20s %10s  ' "$(basename "$target")" "$(fs_label "$fs")" "$(human_size "$(stat -c %s "$target")")"
+            if check_image "$target" "$fs"; then echo OK; else echo FAILED; exit 1; fi
+            if [ -n "$vendor" ]; then
+                cmd_verify "$vendor"
+            fi
+            ;;
+    esac
+}
+
+# --- main -------------------------------------------------------------------
+
+[ $# -gt 0 ] || { usage; exit 1; }
+cmd="$1"; shift
+case "$cmd" in
+    status)   cmd_status "$@" ;;
+    list)     cmd_list "$@" ;;
+    download) cmd_download "$@" ;;
+    install)  cmd_install "$@" ;;
+    create)   cmd_create "$@" ;;
+    repack)   cmd_repack "$@" ;;
+    verify)   cmd_verify "$@" ;;
+    help|-h|--help) usage ;;
+    *) usage; exit 1 ;;
+esac

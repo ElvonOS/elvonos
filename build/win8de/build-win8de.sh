@@ -34,6 +34,7 @@ PATCH16="$SCRIPT_DIR/patches/0016-panel-position-and-start-logo.patch"
 PATCH17="$SCRIPT_DIR/patches/0017-start-button-persist.patch"
 PATCH18="$SCRIPT_DIR/patches/0018-elvonos-power-buttons-and-lock.patch"
 PATCH19="$SCRIPT_DIR/patches/0019-start-tile-labels-and-battery.patch"
+PATCH20="$SCRIPT_DIR/patches/0020-elvonos-ui-fixes.patch"
 
 INSTALL_ROOTFS=0
 for arg in "$@"; do
@@ -133,6 +134,10 @@ fi
 if [[ -f "$PATCH19" ]]; then
     git apply --check "$PATCH19"
     git apply "$PATCH19"
+fi
+if [[ -f "$PATCH20" ]]; then
+    git apply --check "$PATCH20"
+    git apply "$PATCH20"
 fi
 
 echo "==> Building Win8DE"

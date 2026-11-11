@@ -1,5 +1,13 @@
 # 03 — Waydroid Compatibility Report
 
+> **Status update 2026-11-11:** ElvonOS now ships **Android 16
+> (LineageOS 23.2 QPR2, SDK 36)**. The image pair was boot-tested with
+> Waydroid 1.6.3 (`ro.build.version.release=16`, SurfaceFlinger running,
+> multi-window enabled) and custom EROFS images built by
+> `elvonos-waydroid-image` were boot-tested as well.
+> Details: [18-waydroid-images.md](18-waydroid-images.md). The sections below
+> describe the original Android 13 bring-up and remain valid as history.
+
 Runtime: **Waydroid 1.6.3** (vendored upstream source)
 Image: **Android 13 / LineageOS 20 VANILLA `waydroid_x86_64` 2026-09-27**
 Host base: **Debian 13 Trixie amd64**

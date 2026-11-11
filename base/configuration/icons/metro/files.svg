@@ -1,4 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect width="256" height="256" fill="#F59E0B"/>
-  <text x="128" y="140" font-family="sans-serif" font-size="48" fill="white" text-anchor="middle">F</text>
+  <defs>
+    <linearGradient id="folder" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFC24B"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+  <path d="M24 70a18 18 0 0 1 18-18h62l22 24h88a18 18 0 0 1 18 18v92a18 18 0 0 1-18 18H42a18 18 0 0 1-18-18z"
+        fill="url(#folder)" stroke="#FFE0A3" stroke-width="4"/>
+  <path d="M24 100h208v84a18 18 0 0 1-18 18H42a18 18 0 0 1-18-18z"
+        fill="#FFFBEB" opacity="0.28"/>
+  <rect x="78" y="120" width="100" height="12" rx="6" fill="#FFF7E6" opacity="0.9"/>
+  <rect x="78" y="146" width="72" height="12" rx="6" fill="#FFF7E6" opacity="0.72"/>
+  <rect x="78" y="172" width="86" height="12" rx="6" fill="#FFF7E6" opacity="0.55"/>
 </svg>

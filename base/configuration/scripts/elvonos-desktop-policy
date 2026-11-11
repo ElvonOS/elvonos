@@ -1,0 +1,65 @@
+#!/bin/bash
+# ElvonOS update component: desktop policy fixes for existing installations.
+#
+# 1. Loads the loop module (Waydroid and Flatpak mount images through loops).
+# 2. Grants the desktop account the same passwordless sudo policy as the live
+#    user; ElvonOS services call privileged helpers via `sudo -n`.
+# 3. Adds the Waydroid-compatible LSM boot parameters to GRUB (next boot).
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+
+# --- loop devices -----------------------------------------------------------
+echo "loop" > /etc/modules-load.d/elvonos-loop.conf
+modprobe loop 2>/dev/null || true
+echo "loop module enabled"
+
+# --- Waydroid UID policy ----------------------------------------------------
+# Waydroid maps the desktop UID into the container and only accepts UID 1000
+# for app launches.  Installations created before 1.0.9 may have UID 1001.
+if ! getent passwd 1000 >/dev/null 2>&1; then
+    for user in $(getent group sudo 2>/dev/null | cut -d: -f4 | tr ',' ' '); do
+        [ -n "$user" ] || continue
+        [ "$user" = "root" ] && continue
+        uid=$(id -u "$user" 2>/dev/null || echo 0)
+        if [ "$uid" != "0" ] && [ "$uid" != "1000" ]; then
+            usermod -u 1000 "$user" 2>/dev/null || true
+            groupmod -g 1000 "$user" 2>/dev/null || true
+            home=$(getent passwd "$user" | cut -d: -f6)
+            [ -n "$home" ] && chown -R 1000:1000 "$home" 2>/dev/null || true
+            echo "migrated $user to UID/GID 1000"
+        fi
+        break
+    done
+fi
+
+# --- passwordless sudo for desktop accounts ---------------------------------
+changed=0
+users=$(getent group sudo 2>/dev/null | cut -d: -f4 | tr ',' ' ')
+for user in $users; do
+    [ -n "$user" ] || continue
+    [ "$user" = "root" ] && continue
+    file="/etc/sudoers.d/elvonos-$user"
+    printf '%s ALL=(ALL:ALL) NOPASSWD:ALL\n' "$user" > "$file"
+    chmod 0440 "$file"
+    if visudo -cf "$file" >/dev/null 2>&1; then
+        echo "passwordless sudo enabled for $user"
+        changed=1
+    else
+        rm -f "$file"
+        echo "warning: could not validate sudoers entry for $user" >&2
+    fi
+done
+[ "$changed" = "1" ] || echo "no sudo-group users found"
+
+# --- Waydroid boot parameters ----------------------------------------------
+if [ -f /etc/default/grub ] && ! grep -q 'security=selinux' /etc/default/grub; then
+    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet security=selinux apparmor=0"/' \
+        /etc/default/grub
+    if command -v update-grub >/dev/null 2>&1; then
+        update-grub >/dev/null 2>&1 || true
+    fi
+    echo "GRUB parameters updated (effective after reboot)"
+fi
+
+echo "desktop policy applied"

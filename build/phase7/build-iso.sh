@@ -64,13 +64,42 @@ if [[ -n "$CONFIG_BIN" ]]; then
     $SUDO cp -f "$CONFIG_BIN" "$ISO_STAGING/live/config"
 fi
 
-# 2. Bundle Waydroid Android 13 Images
-echo "==> Bundling Waydroid Android 13 images..."
-if [[ -f "$REPO_ROOT/Android/Waydroid-images/system.img" && -f "$REPO_ROOT/Android/Waydroid-images/vendor.img" ]]; then
-    cp "$REPO_ROOT/Android/Waydroid-images/system.img" "$ISO_STAGING/elvonos/waydroid/"
-    cp "$REPO_ROOT/Android/Waydroid-images/vendor.img" "$ISO_STAGING/elvonos/waydroid/"
+# 2. Bundle Waydroid Android 16 Images
+echo "==> Bundling Waydroid Android 16 images..."
+WAYDROID_IMG_DIR="$REPO_ROOT/Android/Waydroid-images/android16"
+if [[ -f "$WAYDROID_IMG_DIR/system.img" && -f "$WAYDROID_IMG_DIR/vendor.img" ]]; then
+    cp --sparse=always "$WAYDROID_IMG_DIR/system.img" "$ISO_STAGING/elvonos/waydroid/"
+    cp --sparse=always "$WAYDROID_IMG_DIR/vendor.img" "$ISO_STAGING/elvonos/waydroid/"
     (cd "$ISO_STAGING/elvonos/waydroid" && sha256sum system.img vendor.img > SHA256SUMS)
-    echo "==> Bundled system.img and vendor.img with checksums."
+    SYS_SHA=$(sha256sum "$ISO_STAGING/elvonos/waydroid/system.img" | cut -d' ' -f1)
+    VEN_SHA=$(sha256sum "$ISO_STAGING/elvonos/waydroid/vendor.img" | cut -d' ' -f1)
+    python3 - "$ISO_STAGING/elvonos/waydroid/elvonos-image.json" \
+        "$SYS_SHA" "$VEN_SHA" <<'PY'
+import datetime, json, sys
+path, sys_sha, ven_sha = sys.argv[1:4]
+data = {
+    "id": "android16",
+    "name": "Android 16 (LineageOS 23.2 QPR2)",
+    "android": "16",
+    "sdk": 36,
+    "vendor_type": "MAINLINE",
+    "release": "20260717",
+    "created": datetime.datetime.now(datetime.timezone.utc)
+                .strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "system": {"file": "system.img", "sha256": sys_sha},
+    "vendor": {"file": "vendor.img", "sha256": ven_sha},
+    "source": "https://github.com/WayDroid-ATV/waydroid-builds",
+}
+open(path, "w").write(json.dumps(data, indent=2) + "\n")
+PY
+    echo "==> Bundled Android 16 system.img and vendor.img with checksums."
+elif [[ -f "$REPO_ROOT/Android/Waydroid-images/system.img" && \
+        -f "$REPO_ROOT/Android/Waydroid-images/vendor.img" ]]; then
+    echo "==> Android 16 images not found; falling back to Android 13 images."
+    cp --sparse=always "$REPO_ROOT/Android/Waydroid-images/system.img" "$ISO_STAGING/elvonos/waydroid/"
+    cp --sparse=always "$REPO_ROOT/Android/Waydroid-images/vendor.img" "$ISO_STAGING/elvonos/waydroid/"
+    (cd "$ISO_STAGING/elvonos/waydroid" && sha256sum system.img vendor.img > SHA256SUMS)
+    echo "==> Bundled Android 13 system.img and vendor.img with checksums."
 else
     echo "Warning: Waydroid images not found in Android/Waydroid-images/."
 fi

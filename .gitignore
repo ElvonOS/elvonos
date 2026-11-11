@@ -12,6 +12,8 @@
 
 # Android images are external artifacts (2.3 GB); verify by SHA256 instead of committing
 Android/Waydroid-images/*.img
+Android/Waydroid-images/**/*.img
+Android/Waydroid-images/**/*.zip
 # Third-party APKs (Aurora/GMS/vending) are downloaded at build time
 Android/waydroid-apps/
 *.apk

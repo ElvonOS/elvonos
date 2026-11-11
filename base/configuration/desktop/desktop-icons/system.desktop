@@ -2,6 +2,6 @@
 Name=System
 Comment=System controls
 Exec=/usr/bin/elvonos-menu
-Icon=system
+Icon=preferences-system
 Type=Application
 Categories=System;

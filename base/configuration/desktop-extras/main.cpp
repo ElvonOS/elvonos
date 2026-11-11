@@ -11,6 +11,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMimeDatabase>
+#include <QMimeType>
 #include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
@@ -34,6 +36,7 @@ struct Entry {
     QString path;
     QString categories;
     bool isDir = false;
+    bool isDesktop = false;
 };
 
 QString resolveIcon(const QString &name)
@@ -55,6 +58,10 @@ QString resolveIcon(const QString &name)
         "/usr/share/icons/hicolor/48x48/apps/",
         "/usr/share/icons/Papirus/64x64/apps/",
         "/usr/share/icons/Papirus/48x48/apps/",
+        "/usr/share/icons/Papirus/48x48/devices/",
+        "/usr/share/icons/Papirus/48x48/places/",
+        "/usr/share/icons/breeze/devices/64/",
+        "/usr/share/icons/breeze/devices/48/",
         "/usr/share/icons/Adwaita/64x64/apps/",
         "/usr/share/icons/Adwaita/48x48/apps/",
         "/usr/share/pixmaps/",
@@ -94,6 +101,7 @@ bool parseDesktop(const QString &path, Entry &out)
     out.path = path;
     out.categories = settings.value("Categories").toString().trimmed();
     out.isDir = false;
+    out.isDesktop = true;
     return true;
 }
 
@@ -134,7 +142,11 @@ QString resolveSearchIcon(const QString &name)
         "/usr/share/icons/Papirus/48x48/apps/",
         "/usr/share/icons/Papirus/48x48/mimetypes/",
         "/usr/share/icons/Papirus/48x48/places/",
+        "/usr/share/icons/Papirus/48x48/devices/",
         "/usr/share/icons/Papirus/24x24/actions/",
+        "/usr/share/icons/breeze/mimetypes/48/",
+        "/usr/share/icons/breeze/devices/48/",
+        "/usr/share/icons/breeze/places/48/",
         "/usr/share/icons/hicolor/scalable/apps/",
         "/usr/share/icons/hicolor/scalable/mimetypes/",
         "/usr/share/icons/hicolor/64x64/apps/",
@@ -150,6 +162,77 @@ QString resolveSearchIcon(const QString &name)
         }
     }
     return {};
+}
+
+QString shellQuote(const QString &value)
+{
+    QString escaped = value;
+    escaped.replace(QLatin1Char('\''), QStringLiteral("'\\''"));
+    return QLatin1Char('\'') + escaped + QLatin1Char('\'');
+}
+
+QString folderIconFor(const QString &name)
+{
+    const QString lower = name.toLower();
+    QString icon;
+    if (lower.contains("system"))
+        icon = QStringLiteral("preferences-system");
+    else if (lower.contains("maintenance"))
+        icon = QStringLiteral("preferences-other");
+    else if (lower.contains("media") || lower.contains("graphic"))
+        icon = QStringLiteral("multimedia");
+    else if (lower.contains("office"))
+        icon = QStringLiteral("x-office-document");
+    else if (lower.contains("utilit"))
+        icon = QStringLiteral("applications-utilities");
+    else if (lower.contains("game"))
+        icon = QStringLiteral("applications-games");
+    else
+        icon = QStringLiteral("folder");
+
+    QString resolved = resolveSearchIcon(icon);
+    if (resolved.isEmpty())
+        resolved = resolveIcon(icon);
+    if (resolved.isEmpty())
+        resolved = QStringLiteral("file:///usr/share/icons/Papirus/48x48/places/folder.svg");
+    return resolved;
+}
+
+bool makeFileEntry(const QFileInfo &info, Entry &out)
+{
+    if (!info.exists() || !info.isFile() || info.isHidden())
+        return false;
+
+    QMimeDatabase database;
+    const QMimeType mime = database.mimeTypeForFile(info);
+    QString icon = resolveSearchIcon(mime.iconName());
+    if (icon.isEmpty()) {
+        const QString lower = mime.name();
+        if (lower.startsWith("image/"))
+            icon = resolveSearchIcon(QStringLiteral("image-x-generic"));
+        else if (lower.startsWith("video/"))
+            icon = resolveSearchIcon(QStringLiteral("video-x-generic"));
+        else if (lower.startsWith("audio/"))
+            icon = resolveSearchIcon(QStringLiteral("audio-x-generic"));
+        else if (lower == "application/pdf")
+            icon = resolveSearchIcon(QStringLiteral("application-pdf"));
+        else if (lower.contains("zip") || lower.contains("tar")
+                 || lower.contains("compressed") || lower.contains("archive"))
+            icon = resolveSearchIcon(QStringLiteral("package-x-generic"));
+        else if (lower.startsWith("text/"))
+            icon = resolveSearchIcon(QStringLiteral("text-x-generic"));
+        else
+            icon = resolveSearchIcon(QStringLiteral("application-x-generic"));
+    }
+
+    out.name = info.fileName();
+    out.path = info.absoluteFilePath();
+    out.icon = icon;
+    out.exec = QStringLiteral("xdg-open ") + shellQuote(out.path);
+    out.categories.clear();
+    out.isDir = false;
+    out.isDesktop = false;
+    return true;
 }
 
 } // namespace
@@ -237,16 +320,22 @@ public:
             Entry entry;
             entry.name = dir.fileName();
             entry.path = dir.absoluteFilePath();
-            entry.icon = QStringLiteral("file:///usr/share/icons/Papirus/48x48/places/folder.svg");
+            entry.icon = folderIconFor(dir.fileName());
             entry.isDir = true;
             m_entries.append(entry);
         }
         const QFileInfoList files = QDir(m_dir).entryInfoList(
-            {"*.desktop"}, QDir::Files | QDir::Readable, QDir::Name);
+            QDir::Files | QDir::Readable | QDir::NoDotAndDotDot, QDir::Name);
         for (const QFileInfo &file : files) {
+            if (file.fileName().startsWith(QLatin1Char('.')))
+                continue;
             Entry entry;
-            if (parseDesktop(file.absoluteFilePath(), entry))
+            if (file.fileName().endsWith(QStringLiteral(".desktop"))) {
+                if (parseDesktop(file.absoluteFilePath(), entry))
+                    m_entries.append(entry);
+            } else if (makeFileEntry(file, entry)) {
                 m_entries.append(entry);
+            }
         }
         std::sort(m_entries.begin(), m_entries.end(), [](const Entry &a, const Entry &b) {
             if (a.isDir != b.isDir)
@@ -284,14 +373,34 @@ public:
     Q_INVOKABLE QVariantList entriesIn(const QString &directory) const
     {
         QList<Entry> entries;
-        const QFileInfoList files = QDir(directory).entryInfoList(
-            {QStringLiteral("*.desktop")}, QDir::Files | QDir::Readable, QDir::Name);
-        for (const QFileInfo &file : files) {
+        const QFileInfoList dirs = QDir(directory).entryInfoList(
+            QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable, QDir::Name);
+        for (const QFileInfo &dir : dirs) {
+            if (dir.fileName().startsWith(QLatin1Char('.')))
+                continue;
             Entry entry;
-            if (parseDesktop(file.absoluteFilePath(), entry))
+            entry.name = dir.fileName();
+            entry.path = dir.absoluteFilePath();
+            entry.icon = folderIconFor(dir.fileName());
+            entry.isDir = true;
+            entries.append(entry);
+        }
+        const QFileInfoList files = QDir(directory).entryInfoList(
+            QDir::Files | QDir::Readable | QDir::NoDotAndDotDot, QDir::Name);
+        for (const QFileInfo &file : files) {
+            if (file.fileName().startsWith(QLatin1Char('.')))
+                continue;
+            Entry entry;
+            if (file.fileName().endsWith(QStringLiteral(".desktop"))) {
+                if (parseDesktop(file.absoluteFilePath(), entry))
+                    entries.append(entry);
+            } else if (makeFileEntry(file, entry)) {
                 entries.append(entry);
+            }
         }
         std::sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b) {
+            if (a.isDir != b.isDir)
+                return a.isDir;
             return a.name.toLower() < b.name.toLower();
         });
 
@@ -302,6 +411,8 @@ public:
             item.insert(QStringLiteral("icon"), entry.icon);
             item.insert(QStringLiteral("exec"), entry.exec);
             item.insert(QStringLiteral("path"), entry.path);
+            item.insert(QStringLiteral("isDir"), entry.isDir);
+            item.insert(QStringLiteral("isDesktop"), entry.isDesktop);
             result.append(item);
         }
         return result;
@@ -310,8 +421,21 @@ public:
     Q_INVOKABLE void launchEntry(const QString &path)
     {
         Entry entry;
-        if (parseDesktop(path, entry))
+        if (parseDesktop(path, entry)) {
             runCommand(entry.exec);
+            return;
+        }
+        const QFileInfo info(path);
+        if (info.isDir()) {
+            QString explorer =
+                QStandardPaths::findExecutable(QStringLiteral("elvonos-explorer"));
+            if (explorer.isEmpty())
+                explorer = QStandardPaths::findExecutable(QStringLiteral("thunar"));
+            if (!explorer.isEmpty())
+                QProcess::startDetached(explorer, {path});
+        } else if (info.exists()) {
+            runCommand(QStringLiteral("xdg-open ") + shellQuote(info.absoluteFilePath()));
+        }
     }
 
     Q_INVOKABLE bool copyEntry(int index)
@@ -321,8 +445,9 @@ public:
         const Entry &entry = m_entries.at(index);
         const QFileInfo info(entry.path);
         const QString targetBase = entry.isDir ? entry.name
-                                               : info.completeBaseName();
-        const QString suffix = entry.isDir ? QString() : QStringLiteral(".desktop");
+                                               : (entry.isDesktop ? info.completeBaseName()
+                                                                  : info.fileName());
+        const QString suffix = entry.isDesktop ? QStringLiteral(".desktop") : QString();
         const QString target = uniqueTarget(m_dir, targetBase + QStringLiteral(" copy"),
                                             suffix);
         bool ok = false;
@@ -330,7 +455,7 @@ public:
             ok = copyDirectory(entry.path, target);
         } else {
             ok = QFile::copy(entry.path, target);
-            if (ok)
+            if (ok && entry.isDesktop)
                 setDesktopName(target, targetBase + QStringLiteral(" copy"));
         }
         setMessage(ok ? QStringLiteral("Copied %1").arg(entry.name)
@@ -345,13 +470,13 @@ public:
         if (index < 0 || index >= m_entries.size())
             return false;
         QString name = newName.trimmed();
-        if (name.endsWith(QStringLiteral(".desktop")))
-            name.chop(9);
         if (name.isEmpty())
             return false;
         const Entry &entry = m_entries.at(index);
         const QFileInfo info(entry.path);
-        const QString suffix = entry.isDir ? QString() : QStringLiteral(".desktop");
+        const QString suffix = entry.isDesktop ? QStringLiteral(".desktop") : QString();
+        if (entry.isDesktop && name.endsWith(QStringLiteral(".desktop")))
+            name.chop(9);
         QString target = m_dir + QLatin1Char('/') + name + suffix;
         if (target == entry.path)
             return true;
@@ -361,7 +486,7 @@ public:
             ok = QDir().rename(entry.path, target);
         } else {
             ok = QFile::rename(entry.path, target);
-            if (ok)
+            if (ok && entry.isDesktop)
                 setDesktopName(target, name);
         }
         setMessage(ok ? QStringLiteral("Renamed to %1").arg(QFileInfo(target).fileName())
@@ -429,19 +554,23 @@ public:
         result.insert(QStringLiteral("isDir"), entry.isDir);
         result.insert(QStringLiteral("type"),
                       entry.isDir ? QStringLiteral("Folder")
-                                  : QStringLiteral("Desktop Entry"));
+                                  : (entry.isDesktop ? QStringLiteral("Desktop Entry")
+                                                     : QStringLiteral("File")));
         result.insert(QStringLiteral("size"), humanSize(info.size()));
         result.insert(QStringLiteral("modified"),
                       info.lastModified().toString(QStringLiteral("yyyy-MM-dd HH:mm")));
         result.insert(QStringLiteral("exec"), entry.exec);
         result.insert(QStringLiteral("icon"), entry.icon);
         result.insert(QStringLiteral("categories"), entry.categories);
-        result.insert(QStringLiteral("package"), packageFor(entry.path));
-        if (!entry.isDir) {
+        if (entry.isDesktop) {
+            result.insert(QStringLiteral("package"), packageFor(entry.path));
             QSettings settings(entry.path, QSettings::IniFormat);
             settings.beginGroup(QStringLiteral("Desktop Entry"));
             result.insert(QStringLiteral("comment"),
                           settings.value(QStringLiteral("Comment")).toString());
+        } else {
+            result.insert(QStringLiteral("package"), QString());
+            result.insert(QStringLiteral("comment"), QString());
         }
         return result;
     }
@@ -815,6 +944,7 @@ public:
         if (m_indexBuilt)
             return;
         buildAppIndex();
+        startFileIndex();
         m_indexBuilt = true;
     }
 
@@ -844,6 +974,11 @@ private:
         QString name;
         QString exec;
         QString icon;
+    };
+
+    struct FileEntry {
+        QString name;
+        QString path;
     };
 
     void buildAppIndex()
@@ -883,6 +1018,72 @@ private:
                 entry.icon = resolveSearchIcon(
                     settings.value(QStringLiteral("Desktop Entry/Icon")).toString().trimmed());
                 m_apps.append(entry);
+            }
+        }
+    }
+
+    void startFileIndex()
+    {
+        const QString executable =
+            QStandardPaths::findExecutable(QStringLiteral("elvonos-search-index"));
+        if (executable.isEmpty()) {
+            buildFileIndexLegacy();
+            return;
+        }
+        auto *process = new QProcess(this);
+        connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                this, [this, process](int code, QProcess::ExitStatus status) {
+            if (code == 0 && status == QProcess::NormalExit) {
+                const QJsonDocument document =
+                    QJsonDocument::fromJson(process->readAllStandardOutput());
+                if (document.isArray()) {
+                    m_files.clear();
+                    for (const QJsonValue &value : document.array()) {
+                        const QJsonObject object = value.toObject();
+                        FileEntry entry;
+                        entry.name = object.value(QStringLiteral("name")).toString();
+                        entry.path = object.value(QStringLiteral("path")).toString();
+                        if (!entry.name.isEmpty() && !entry.path.isEmpty())
+                            m_files.append(entry);
+                    }
+                    if (!m_query.isEmpty())
+                        rebuild();
+                }
+            } else {
+                buildFileIndexLegacy();
+                if (!m_query.isEmpty())
+                    rebuild();
+            }
+            process->deleteLater();
+        });
+        process->start(executable, {QStringLiteral("--json")});
+    }
+
+    void buildFileIndexLegacy()
+    {
+        const QStringList roots = {
+            QStandardPaths::writableLocation(QStandardPaths::DesktopLocation),
+            QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+            QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
+            QStandardPaths::writableLocation(QStandardPaths::PicturesLocation),
+            QStandardPaths::writableLocation(QStandardPaths::MusicLocation),
+            QStandardPaths::writableLocation(QStandardPaths::MoviesLocation),
+        };
+        m_files.clear();
+        for (const QString &root : roots) {
+            if (root.isEmpty() || !QDir(root).exists())
+                continue;
+            QDirIterator it(root, QDir::Files | QDir::Readable | QDir::NoDotAndDotDot,
+                            QDirIterator::Subdirectories);
+            while (it.hasNext() && m_files.size() < 4000) {
+                const QString path = it.next();
+                if (path.contains(QStringLiteral("/.")))
+                    continue;
+                const QFileInfo info(path);
+                if (info.suffix().compare(QStringLiteral("desktop"),
+                                          Qt::CaseInsensitive) == 0)
+                    continue;
+                m_files.append({info.fileName(), path});
             }
         }
     }
@@ -939,48 +1140,25 @@ private:
 
     QVariantList findFiles(const QString &query, int limit) const
     {
-        const QStringList roots = {
-            QStandardPaths::writableLocation(QStandardPaths::DesktopLocation),
-            QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-            QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
-            QStandardPaths::writableLocation(QStandardPaths::PicturesLocation),
-            QStandardPaths::writableLocation(QStandardPaths::MusicLocation),
-            QStandardPaths::writableLocation(QStandardPaths::MoviesLocation),
-        };
         QVariantList found;
-        int visited = 0;
         const QString home = QDir::homePath();
-        for (const QString &root : roots) {
+        for (const FileEntry &entry : m_files) {
             if (found.size() >= limit)
                 break;
-            if (root.isEmpty() || !QDir(root).exists())
+            if (!entry.name.contains(query, Qt::CaseInsensitive))
                 continue;
-            QDirIterator it(root,
-                            QDir::Files | QDir::Readable | QDir::NoDotAndDotDot,
-                            QDirIterator::Subdirectories);
-            while (it.hasNext() && visited < 4000 && found.size() < limit) {
-                const QString path = it.next();
-                ++visited;
-                if (path.contains(QStringLiteral("/.")))
-                    continue;
-                const QFileInfo info(path);
-                if (info.suffix().compare(QStringLiteral("desktop"), Qt::CaseInsensitive) == 0)
-                    continue;
-                if (!info.fileName().contains(query, Qt::CaseInsensitive))
-                    continue;
-
-                QVariantMap item;
-                item.insert(QStringLiteral("kind"), QStringLiteral("item"));
-                item.insert(QStringLiteral("type"), QStringLiteral("file"));
-                item.insert(QStringLiteral("name"), info.fileName());
-                QString directory = info.absolutePath();
-                if (directory.startsWith(home))
-                    directory = QStringLiteral("~") + directory.mid(home.size());
-                item.insert(QStringLiteral("detail"), directory);
-                item.insert(QStringLiteral("path"), path);
-                item.insert(QStringLiteral("icon"), iconForFile(info));
-                found.append(item);
-            }
+            const QFileInfo info(entry.path);
+            QVariantMap item;
+            item.insert(QStringLiteral("kind"), QStringLiteral("item"));
+            item.insert(QStringLiteral("type"), QStringLiteral("file"));
+            item.insert(QStringLiteral("name"), entry.name);
+            QString directory = info.absolutePath();
+            if (directory.startsWith(home))
+                directory = QStringLiteral("~") + directory.mid(home.size());
+            item.insert(QStringLiteral("detail"), directory);
+            item.insert(QStringLiteral("path"), entry.path);
+            item.insert(QStringLiteral("icon"), iconForFile(info));
+            found.append(item);
         }
         return found;
     }
@@ -1019,6 +1197,7 @@ private:
     }
 
     QList<AppEntry> m_apps;
+    QList<FileEntry> m_files;
     QVariantList m_results;
     QString m_query;
     bool m_indexBuilt = false;

@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "default": "android16",
+  "cache_dir": "/var/cache/elvonos/waydroid",
+  "images": {
+    "android16": {
+      "label": "Android 16 (LineageOS 23.2 QPR2)",
+      "android": "16",
+      "sdk": 36,
+      "vendor_type": "MAINLINE",
+      "release": "20260717",
+      "source": "https://github.com/WayDroid-ATV/waydroid-builds",
+      "system": {
+        "url": "https://github.com/WayDroid-ATV/waydroid-builds/releases/download/20260717/lineage-23.2-20260717-VANILLA-waydroid_x86_64-system.zip",
+        "sha256": "152e0f5c01cf10cc4c7ec93723c286308a06cb1334e6eeb4a4039cb345f97ae4",
+        "size": 1103813388,
+        "member": "system.img"
+      },
+      "vendor": {
+        "url": "https://github.com/WayDroid-ATV/waydroid-builds/releases/download/20260717/lineage-23.2-20260717-MAINLINE-waydroid_x86_64-vendor.zip",
+        "sha256": "28dfbd0e423dff6d5c7d2e34e15011fbaf4865da769d9923b84656d87e9f4d3c",
+        "size": 210854104,
+        "member": "vendor.img"
+      }
+    },
+    "android17": {
+      "label": "Android 17 (LineageOS 24.0 QPR0)",
+      "android": "17",
+      "sdk": 37,
+      "vendor_type": "MAINLINE",
+      "release": "20261017",
+      "source": "https://github.com/WayDroid-ATV/waydroid-builds",
+      "system": {
+        "url": "https://github.com/WayDroid-ATV/waydroid-builds/releases/download/20261017/lineage-24.0-20261017-VANILLA-waydroid_x86_64-system.zip",
+        "sha256": "4c7e13a39bcbecc598726c959c6f4eb2aa8a89e67f2902581ab250ec6a75184b",
+        "size": 1167848338,
+        "member": "system.img"
+      },
+      "vendor": {
+        "url": "https://github.com/WayDroid-ATV/waydroid-builds/releases/download/20261017/lineage-24.0-20261017-MAINLINE-waydroid_x86_64-vendor.zip",
+        "sha256": "bf96441172f1fb3c43e62c72d074fa856b8bafc35737ff9f143dbad5d545c7fc",
+        "size": 260970514,
+        "member": "vendor.img"
+      }
+    }
+  }
+}

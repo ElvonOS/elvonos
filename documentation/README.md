@@ -23,6 +23,8 @@ still in German and are being translated.
 | [15-free-updates.md](15-free-updates.md) | **English** | Update client, feed and publishing |
 | [16-upstream-forks-and-changes.md](16-upstream-forks-and-changes.md) | **English** | Base system, forks, patches and changes |
 | [17-release-plan.md](17-release-plan.md) | **English** | Plan for the next releases (1.0.3 / 1.1.0) |
+| [18-waydroid-images.md](18-waydroid-images.md) | **English** | Android 16 images, image manager, custom image creation |
+| [19-ui-fixes-1.0.9.md](19-ui-fixes-1.0.9.md) | **English** | UI, desktop, icon, Media, Store and Waydroid fixes in 1.0.9 |
 
 ## Screenshots
 

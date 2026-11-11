@@ -28,6 +28,7 @@ ApplicationWindow {
     property int groupIndex: -1
     property string groupTitle: ""
     property string groupPath: ""
+    property string groupFilter: ""
     property var groupEntries: []
 
     function tr(text) {
@@ -42,13 +43,28 @@ ApplicationWindow {
         groupTitle = root.tr(desktopModel.nameAt(index))
         groupPath = desktopModel.pathAt(index)
         groupEntries = desktopModel.entriesIn(groupPath)
+        groupFilter = ""
         groupOpen = true
+        if (groupTitle.toLowerCase().indexOf("system") >= 0)
+            Qt.callLater(function () { groupSearch.forceActiveFocus() })
     }
 
     function closeGroup() {
         groupOpen = false
         groupIndex = -1
+        groupFilter = ""
         groupEntries = []
+    }
+
+    function filteredGroupEntries() {
+        const needle = groupFilter.trim().toLowerCase()
+        if (needle.length === 0)
+            return groupEntries
+        return groupEntries.filter(function (entry) {
+            const name = (entry.name || "").toLowerCase()
+            const exec = (entry.exec || "").toLowerCase()
+            return name.indexOf(needle) >= 0 || exec.indexOf(needle) >= 0
+        })
     }
 
     function openMenu(index, x, y) {
@@ -767,7 +783,7 @@ ApplicationWindow {
                     spacing: 8
 
                     Column {
-                        width: parent.width - 130 - 70 - 16
+                        width: parent.width - 200 - 130 - 70 - 30
                         spacing: 1
                         Text {
                             text: root.tr("GROUP")
@@ -782,6 +798,30 @@ ApplicationWindow {
                             font.pixelSize: 16
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
+                        }
+                    }
+
+                    Rectangle {
+                        width: 200
+                        height: 32
+                        radius: 9
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: "#16FFFFFF"
+                        border.width: 1
+                        border.color: groupSearch.activeFocus ? "#554CC2FF" : "#22FFFFFF"
+
+                        TextField {
+                            id: groupSearch
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            placeholderText: root.tr("Search in group…")
+                            color: "#F2F4F8"
+                            placeholderTextColor: "#7C8492"
+                            background: null
+                            font.pixelSize: 10
+                            onTextChanged: root.groupFilter = text
+                            Keys.onEscapePressed: root.closeGroup()
                         }
                     }
 
@@ -851,7 +891,7 @@ ApplicationWindow {
                         spacing: 8
 
                         Repeater {
-                            model: root.groupEntries
+                            model: root.filteredGroupEntries()
 
                             delegate: Item {
                                 required property var modelData
@@ -932,8 +972,10 @@ ApplicationWindow {
                 }
 
                 Text {
-                    visible: root.groupEntries.length === 0
-                    text: root.tr("No applications in this group")
+                    visible: root.filteredGroupEntries().length === 0
+                    text: root.groupFilter.length > 0
+                          ? root.tr("No matches in this group")
+                          : root.tr("No applications in this group")
                     color: "#6F7682"
                     font.pixelSize: 11
                 }

@@ -140,6 +140,10 @@ for f in "$REPO_ROOT"/base/configuration/desktop/desktop-icons/*.desktop; do
     esac
     sudo install -Dm644 "$f" "$ROOTFS/home/elvon/Desktop/$group/$(basename "$f")"
 done
+# Live-only installer shortcut; the installer removes it from the target.
+sudo install -Dm644 "$REPO_ROOT/base/configuration/installer/elvonos-installer.desktop" \
+    "$ROOTFS/home/elvon/Desktop/Install ElvonOS.desktop"
+sudo chown 1000:1000 "$ROOTFS/home/elvon/Desktop/Install ElvonOS.desktop"
 
 # 5b. XDG user directories and a sample photo for the Gallery
 for userdir in Documents Downloads Pictures Music Videos Public Templates; do
@@ -183,6 +187,7 @@ done
 # 4j. Default Win8Start Metro tile layout generator
 echo "==> Installing Win8Start default tile generator..."
 sudo install -Dm755 "$REPO_ROOT/base/configuration/scripts/elvonos-win8start-defaults" "$ROOTFS/usr/bin/elvonos-win8start-defaults"
+sudo install -Dm755 "$REPO_ROOT/base/configuration/scripts/elvonos-menu" "$ROOTFS/usr/bin/elvonos-menu"
 
 # 4j2. udisks2 polkit rule for the live user (drives/USB in the Explorer)
 if [ -f "$REPO_ROOT/base/configuration/polkit/49-elvonos-udisks.rules" ]; then
@@ -206,6 +211,9 @@ fi
 sudo install -Dm755 "$REPO_ROOT/base/configuration/scripts/elvonos-waydroid-sync" "$ROOTFS/usr/bin/elvonos-waydroid-sync"
 sudo install -Dm755 "$REPO_ROOT/base/configuration/scripts/elvonos-waydroid-apk-entry" "$ROOTFS/usr/bin/elvonos-waydroid-apk-entry"
 sudo install -Dm755 "$REPO_ROOT/base/configuration/scripts/elvonos-waydroid-install-apk" "$ROOTFS/usr/bin/elvonos-waydroid-install-apk"
+sudo install -Dm755 "$REPO_ROOT/base/configuration/scripts/elvonos-waydroid-image" "$ROOTFS/usr/bin/elvonos-waydroid-image"
+sudo install -Dm644 "$REPO_ROOT/base/configuration/waydroid/images.json" \
+    "$ROOTFS/usr/share/elvonos/waydroid/images.json"
 sudo install -Dm755 "$REPO_ROOT/base/configuration/scripts/elvonos-desktop" "$ROOTFS/usr/bin/elvonos-desktop"
 sudo install -Dm644 "$REPO_ROOT/base/configuration/waydroid/Waydroid.desktop" "$ROOTFS/usr/share/applications/Waydroid.desktop"
 sudo install -Dm644 "$REPO_ROOT/base/configuration/waydroid/APK-Installer.desktop" "$ROOTFS/usr/share/applications/APK-Installer.desktop"

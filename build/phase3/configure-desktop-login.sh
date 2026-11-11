@@ -141,26 +141,42 @@ sudo chroot "$ROOTFS" systemctl enable systemd-logind.service 2>/dev/null || tru
 echo "==> Setting up elvonos-waydroid-init service..."
 cat << 'EOF' | sudo tee "$ROOTFS/usr/bin/elvonos-waydroid-init" >/dev/null
 #!/usr/bin/env bash
-# Initialize Waydroid from the images bundled on the live medium.
-# Waydroid only treats /etc/waydroid-extra/images and
-# /usr/share/waydroid-extra/images as preinstalled; symlinks keep the 2.3 GB
-# images on the read-only ISO instead of copying them into the RAM overlay.
+# Initialize Waydroid from the images bundled on the live medium or installed
+# in /etc/waydroid-extra/images (written by elvonos-installer).
+#
+# On the live medium the images stay on the read-only ISO and are linked, so
+# the 2 GB image pair is not copied into the RAM overlay.
 set -euo pipefail
 
 LIVE_IMAGES="/run/live/medium/elvonos/waydroid"
-DEST="/usr/share/waydroid-extra/images"
+LIVE_DEST="/usr/share/waydroid-extra/images"
+INSTALLED="/etc/waydroid-extra/images"
 
+# Waydroid mounts the image pair through loop devices.
+modprobe loop 2>/dev/null || true
+
+have_images=0
 if [[ -f "$LIVE_IMAGES/system.img" && -f "$LIVE_IMAGES/vendor.img" ]]; then
-    mkdir -p "$DEST"
-    ln -sf "$LIVE_IMAGES/system.img" "$DEST/system.img"
-    ln -sf "$LIVE_IMAGES/vendor.img" "$DEST/vendor.img"
-    if [[ ! -f /var/lib/waydroid/waydroid.cfg ]]; then
-        echo "==> Initializing Waydroid from Live medium..."
-        waydroid init -f
-    fi
+    mkdir -p "$LIVE_DEST"
+    ln -sf "$LIVE_IMAGES/system.img" "$LIVE_DEST/system.img"
+    ln -sf "$LIVE_IMAGES/vendor.img" "$LIVE_DEST/vendor.img"
+    have_images=1
+elif [[ -f "$INSTALLED/system.img" && -f "$INSTALLED/vendor.img" ]]; then
+    have_images=1
+fi
+
+if [[ "$have_images" == "1" && ! -f /var/lib/waydroid/waydroid.cfg ]]; then
+    echo "==> Initializing Waydroid from preinstalled images..."
+    waydroid init -f
+fi
+
+if [[ "$have_images" == "1" ]]; then
     for propfile in /var/lib/waydroid/waydroid_base.prop /var/lib/waydroid/waydroid.prop; do
         if [ -f "$propfile" ] && ! grep -q '^persist.waydroid.multi_windows=' "$propfile"; then
             echo 'persist.waydroid.multi_windows=true' >> "$propfile"
+        fi
+        if [ -f "$propfile" ] && ! grep -q '^ro.hw_timeout_multiplier=' "$propfile"; then
+            echo 'ro.hw_timeout_multiplier=10' >> "$propfile"
         fi
     done
 fi

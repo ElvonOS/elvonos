@@ -191,6 +191,16 @@ updated version in /usr/share/docs/labwc/rc.xml.all
     </names>
   </desktops>
   <keyboard>
+    <keybind key="W">
+      <action name="Execute">
+        <command>Win8Start</command>
+      </action>
+    </keybind>
+    <keybind key="W-d">
+      <action name="Execute">
+        <command>elvonos-desktop</command>
+      </action>
+    </keybind>
     <keybind key="W-C-Left">
       <action name="GoToDesktop" to="left"/>
     </keybind>

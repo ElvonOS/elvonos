@@ -1,0 +1,188 @@
+--- a/Win8Start/main.cpp
++++ b/Win8Start/main.cpp
+@@ -650,6 +650,23 @@
+         "/usr/share/icons/breeze/apps/64/",
+         "/usr/share/icons/breeze/apps/48/",
+         "/usr/share/icons/breeze/apps/32/",
++        "/usr/share/icons/breeze/devices/64/",
++        "/usr/share/icons/breeze/devices/48/",
++        "/usr/share/icons/breeze/mimetypes/64/",
++        "/usr/share/icons/breeze/mimetypes/48/",
++        "/usr/share/icons/breeze/places/64/",
++        "/usr/share/icons/breeze/places/48/",
++        "/usr/share/icons/Papirus/64x64/apps/",
++        "/usr/share/icons/Papirus/48x48/apps/",
++        "/usr/share/icons/Papirus/32x32/apps/",
++        "/usr/share/icons/Papirus/24x24/apps/",
++        "/usr/share/icons/Papirus/64x64/actions/",
++        "/usr/share/icons/Papirus/48x48/actions/",
++        "/usr/share/icons/Papirus/48x48/places/",
++        "/usr/share/icons/Papirus/48x48/mimetypes/",
++        "/usr/share/icons/Adwaita/64x64/apps/",
++        "/usr/share/icons/Adwaita/48x48/apps/",
++        "/usr/share/icons/elvonos/metro/",
+         "/usr/share/icons/",
+         "/var/lib/flatpak/exports/share/icons",
+         "/var/lib/flatpak/exports/share/icons/hicolor/512x512/apps/",
+@@ -783,17 +800,25 @@
+ 
+     // 🟢 TERMINAL HANDLING
+     if (terminal) {
+-      QString terminalExe = QStandardPaths::findExecutable("alacritty");
+-      
++      QString terminalExe;
++      for (const QString &candidate : {QStringLiteral("foot"),
++                                       QStringLiteral("elvonos-terminal"),
++                                       QStringLiteral("alacritty"),
++                                       QStringLiteral("xterm")}) {
++        terminalExe = QStandardPaths::findExecutable(candidate);
++        if (!terminalExe.isEmpty())
++          break;
++      }
++
+       if (terminalExe.isEmpty()) {
+-        qWarning() << "❌ Alacritty not found";
++        qWarning() << "❌ No terminal emulator found";
+         return;
+       }
+-      
++
+       QStringList termArgs;
+       termArgs << "-e" << programPath;
+       termArgs << parts;
+-      
++
+       QProcess::startDetached(terminalExe, termArgs);
+     } else {
+       QProcess::startDetached(programPath, parts);
+@@ -1996,7 +2021,9 @@
+   
+ 
+   window->setFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+-  window->showFullScreen();
++  // Keep the Start overlay hidden at login. It is shown on demand by the
++  // taskbar (single-instance toggle) or WindowController.show().
++  window->hide();
+ 
+   // --------------------------------------------------------
+   // Window controller (attach after QML window exists)
+--- a/Win8Start/main.qml
++++ b/Win8Start/main.qml
+@@ -2115,14 +2115,12 @@
+                     cursorShape: Qt.PointingHandCursor
+                     
+                     onClicked: {
+-                        onClicked: {
+-                            allapparea.y=allapparea.height
+-                            searchField.focus = false
+-                            appGridView.focus = false
+-                            container.focus = true
+-                            searchField.text = ""
+-                            categoryFilter.currentIndex = 0
+-                        }
++                        allapparea.y=allapparea.height
++                        searchField.focus = false
++                        appGridView.focus = false
++                        container.focus = true
++                        searchField.text = ""
++                        categoryFilter.currentIndex = 0
+                     }
+                 }
+                 
+--- a/Win8Running/main.cpp
++++ b/Win8Running/main.cpp
+@@ -884,36 +884,47 @@
+     {
+         if (name.isEmpty())
+             return {};
++        if (name.startsWith("file://"))
++            return name;
++        if (name.startsWith('/'))
++            return QFile::exists(name) ? QUrl::fromLocalFile(name).toString()
++                                       : QString();
+ 
+-        const QStringList basePaths = {
+-            qEnvironmentVariable("XDG_DATA_HOME",
+-                                 QDir::homePath() + "/.local/share") + "/icons/hicolor",
+-            QDir::homePath() + "/.icons",
+-            "/usr/share/icons/hicolor",
+-            "/usr/share/icons/breeze/apps",
++        const QString home = QDir::homePath();
++        const QStringList dirs = {
++            "/usr/share/icons/hicolor/scalable/apps",
++            "/usr/share/icons/hicolor/256x256/apps",
++            "/usr/share/icons/hicolor/128x128/apps",
++            "/usr/share/icons/hicolor/64x64/apps",
++            "/usr/share/icons/hicolor/48x48/apps",
++            "/usr/share/icons/Papirus/64x64/apps",
++            "/usr/share/icons/Papirus/48x48/apps",
++            "/usr/share/icons/Papirus/32x32/apps",
++            "/usr/share/icons/Papirus/24x24/apps",
++            "/usr/share/icons/Papirus/48x48/places",
++            "/usr/share/icons/Papirus/48x48/mimetypes",
++            "/usr/share/icons/breeze/apps/64",
++            "/usr/share/icons/breeze/apps/48",
++            "/usr/share/icons/breeze/apps/32",
++            "/usr/share/icons/breeze/devices/64",
++            "/usr/share/icons/breeze/devices/48",
++            "/usr/share/icons/breeze/mimetypes/64",
++            "/usr/share/icons/breeze/mimetypes/48",
++            "/usr/share/icons/breeze/places/64",
++            "/usr/share/icons/breeze/places/48",
++            "/usr/share/icons/Adwaita/64x64/apps",
++            "/usr/share/icons/Adwaita/48x48/apps",
++            "/usr/share/icons/elvonos/metro",
+             "/usr/share/pixmaps",
+-            "/usr/share/icons"
+-        };
+-        const QStringList sizes = {
+-            "scalable/apps", "256x256/apps", "128x128/apps",
+-            "64x64/apps", "48x48/apps", "64", "48"
++            home + "/.local/share/icons/hicolor/256x256/apps",
++            home + "/.local/share/icons/hicolor/scalable/apps",
+         };
+ 
+-        for (const QString &base : basePaths) {
+-            if (base == "/usr/share/pixmaps" || base == "/usr/share/icons") {
+-                for (const QString &suffix : {QStringLiteral(".png"), QStringLiteral(".svg")}) {
+-                    const QString path = base + "/" + name + suffix;
+-                    if (QFile::exists(path))
+-                        return QUrl::fromLocalFile(path).toString();
+-                }
+-                continue;
+-            }
+-            for (const QString &size : sizes) {
+-                for (const QString &suffix : {QStringLiteral(".svg"), QStringLiteral(".png")}) {
+-                    const QString path = base + "/" + size + "/" + name + suffix;
+-                    if (QFile::exists(path))
+-                        return QUrl::fromLocalFile(path).toString();
+-                }
++        for (const QString &dir : dirs) {
++            for (const QString &suffix : {QStringLiteral(".svg"), QStringLiteral(".png")}) {
++                const QString path = dir + "/" + name + suffix;
++                if (QFile::exists(path))
++                    return QUrl::fromLocalFile(path).toString();
+             }
+         }
+         return {};
+--- a/Win8Running/main.qml
++++ b/Win8Running/main.qml
+@@ -184,6 +184,9 @@
+                     cursorShape: Qt.PointingHandCursor
+                     onClicked: {
+                         TaskbarMenu.hide()
++                        // Keep the taskbar mapped; the Start overlay covers it.
++                        // Hiding it here made it disappear permanently because
++                        // nothing sends the reverse "show" message.
+                         Launcher.launchDetached("Win8Start")
+                     }
+                 }
+@@ -431,7 +434,7 @@
+ 
+             Text {
+                 id: windowCount
+-                visible: TaskbarSettings.showCount
++                visible: TaskbarSettings.showCount && windowModel.windowCount > 0
+                 text: windowModel.windowCount
+                 color: "#6B7280"
+                 font.pixelSize: 10

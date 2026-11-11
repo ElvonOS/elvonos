@@ -294,6 +294,35 @@ rm -rf "$MOUNT"/var/tmp/modules_* 2>/dev/null || true
 : > "$MOUNT/etc/machine-id" 2>/dev/null || true
 rm -f "$MOUNT"/etc/ssh/ssh_host_* 2>/dev/null || true
 
+# --- Waydroid images --------------------------------------------------------
+# The live initializer links the images from the read-only medium. Ship the
+# real files on the installed system so Waydroid works without the ISO.
+LIVE_WAYDROID=""
+for cand in /run/live/medium/elvonos/waydroid /lib/live/mount/medium/elvonos/waydroid; do
+    if [ -f "$cand/system.img" ] && [ -f "$cand/vendor.img" ]; then
+        LIVE_WAYDROID="$cand"
+        break
+    fi
+done
+if [ -n "$LIVE_WAYDROID" ]; then
+    log "Installing Waydroid Android images"
+    rm -rf "$MOUNT/usr/share/waydroid-extra/images"
+    rm -rf "$MOUNT/var/lib/waydroid"
+    mkdir -p "$MOUNT/etc/waydroid-extra/images"
+    cp --sparse=always "$LIVE_WAYDROID/system.img" \
+        "$MOUNT/etc/waydroid-extra/images/system.img"
+    cp --sparse=always "$LIVE_WAYDROID/vendor.img" \
+        "$MOUNT/etc/waydroid-extra/images/vendor.img"
+    if [ -f "$LIVE_WAYDROID/elvonos-image.json" ]; then
+        cp -f "$LIVE_WAYDROID/elvonos-image.json" \
+            "$MOUNT/etc/waydroid-extra/images/elvonos-image.json"
+    fi
+    chmod 644 "$MOUNT"/etc/waydroid-extra/images/*.img
+    sync
+else
+    log "Warning: no Waydroid images on the live medium; skipping Android images."
+fi
+
 # --- Kernel + initramfs -----------------------------------------------------
 KVER=$( (ls -d /lib/modules/* 2>/dev/null | sort -V | tail -n 1) || true )
 KVER=$(basename "${KVER:-}")
@@ -406,6 +435,7 @@ if [ "$USERNAME" != "elvon" ]; then
     chroot "$MOUNT" useradd -m -s /bin/bash -c "$USER_FULLNAME" "$USERNAME"
     rsync -aHAX \
         --exclude='.cache/*' --exclude='.local/share/Trash/*' \
+        --exclude='.local/share/waydroid' \
         --exclude='.config/Win8Start.lock' \
         "$MOUNT/home/elvon/." "$MOUNT/home/$USERNAME/"
     # Absolute paths inside copied desktop configs still point to the live user
@@ -414,10 +444,24 @@ if [ "$USERNAME" != "elvon" ]; then
         sed -i "s#/home/elvon#/home/$USERNAME#g" "$f"
     done
     rm -f "$MOUNT/home/$USERNAME/.config/Win8Start.lock"
-    chroot "$MOUNT" userdel -r elvon >/dev/null 2>&1 || true
+    # Waydroid's Android session maps the desktop UID into the container and
+    # only accepts UID 1000 for app launches.  The live user owns 1000, so
+    # remove it and give the chosen account that UID/GID.
+    chroot "$MOUNT" userdel -f -r elvon >/dev/null 2>&1 || true
+    chroot "$MOUNT" groupdel elvon >/dev/null 2>&1 || true
+    chroot "$MOUNT" usermod -u 1000 "$USERNAME" >/dev/null 2>&1 || true
+    chroot "$MOUNT" groupmod -g 1000 "$USERNAME" >/dev/null 2>&1 || true
+    chown -R 1000:1000 "$MOUNT/home/$USERNAME" 2>/dev/null || true
+    rm -rf "$MOUNT/home/elvon"
 else
     chroot "$MOUNT" usermod -c "$USER_FULLNAME" -s /bin/bash "$USERNAME"
 fi
+# The installer is live-medium only.
+find "$MOUNT/home" -maxdepth 3 -name 'Install ElvonOS.desktop' \
+    -delete 2>/dev/null || true
+# Never migrate the live session's Android user data to the installed system.
+rm -rf "$MOUNT/home/$USERNAME/.local/share/waydroid" \
+       "$MOUNT/home/elvon/.local/share/waydroid" 2>/dev/null || true
 for grp in sudo audio video render plugdev input netdev cdrom; do
     if chroot "$MOUNT" getent group "$grp" >/dev/null 2>&1; then
         chroot "$MOUNT" usermod -aG "$grp" "$USERNAME"
@@ -425,9 +469,13 @@ for grp in sudo audio video render plugdev input netdev cdrom; do
 done
 printf '%s:%s\n' "$USERNAME" "$USER_PASSWORD" | chroot "$MOUNT" chpasswd
 
-# Password-required sudo for the installed system
+# Passwordless sudo for the installed desktop account (ElvonOS policy)
 rm -f "$MOUNT/etc/sudoers.d/elvon" "$MOUNT/etc/sudoers.d/$USERNAME"
-printf '%s ALL=(ALL:ALL) ALL\n' "$USERNAME" > "$MOUNT/etc/sudoers.d/$USERNAME"
+# ElvonOS services (Waydroid, Settings, Cleaner, Control) run privileged
+# operations through `sudo -n`; the desktop account therefore needs the same
+# passwordless policy as the live user.
+printf '%s ALL=(ALL:ALL) NOPASSWD:ALL\n' "$USERNAME" \
+    > "$MOUNT/etc/sudoers.d/$USERNAME"
 chmod 0440 "$MOUNT/etc/sudoers.d/$USERNAME"
 
 # Autologin on tty1

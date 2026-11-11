@@ -1,0 +1,16 @@
+[package]
+name = "elvonos-search-index"
+version = "1.0.0"
+edition = "2021"
+description = "Fast file index for the ElvonOS desktop search"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "elvonos-search-index"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+panic = "abort"

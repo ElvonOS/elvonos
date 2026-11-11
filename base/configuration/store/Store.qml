@@ -74,6 +74,7 @@ ApplicationWindow {
             border.color: Qt.rgba(theme.border.r, theme.border.g, theme.border.b, 0.15)
 
             Row {
+                id: logoRow
                 anchors.left: parent.left
                 anchors.leftMargin: 14
                 anchors.verticalCenter: parent.verticalCenter
@@ -95,8 +96,9 @@ ApplicationWindow {
             }
 
             Row {
-                anchors.left: parent.left
-                anchors.leftMargin: 200
+                id: tabRow
+                anchors.left: logoRow.right
+                anchors.leftMargin: 16
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 6
 
@@ -140,10 +142,14 @@ ApplicationWindow {
             }
 
             Rectangle {
-                anchors.left: parent.left
-                anchors.leftMargin: 332
+                id: searchBox
+                anchors.left: tabRow.right
+                anchors.leftMargin: 14
+                anchors.right: rightControls.left
+                anchors.rightMargin: 14
                 anchors.verticalCenter: parent.verticalCenter
-                width: 300; height: 34; radius: 10
+                height: 34
+                radius: 10
                 color: theme.surface
                 border.width: 1
                 border.color: searchField.activeFocus ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.33) : Qt.rgba(theme.border.r, theme.border.g, theme.border.b, 0.14)
@@ -172,6 +178,7 @@ ApplicationWindow {
             }
 
             Row {
+                id: rightControls
                 anchors.right: parent.right
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter

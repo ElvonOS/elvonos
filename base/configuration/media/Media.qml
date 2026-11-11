@@ -443,45 +443,43 @@ ApplicationWindow {
         }
     }
 
-    component SeekBar: Rectangle {
+    /* ---------------- shared seek/volume slider ---------------- */
+
+    component SeekBar: Slider {
         id: bar
-        property real value: 0.0
         property color fillColor: theme.accent2
         signal seeked(real ratio)
 
-        height: 14
-        color: "transparent"
+        from: 0
+        to: 1
+        stepSize: 0
+        onMoved: bar.seeked(bar.value)
 
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
+        background: Rectangle {
+            x: 0
+            y: (parent.height - 4) / 2
             width: parent.width
             height: 4
             radius: 2
             color: Qt.rgba(theme.border.r, theme.border.g, theme.border.b, 0.15)
+
+            Rectangle {
+                width: Math.max(0, Math.min(1, bar.visualPosition)) * parent.width
+                height: parent.height
+                radius: 2
+                color: bar.fillColor
+            }
         }
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            width: Math.max(0, Math.min(1, bar.value)) * parent.width
-            height: 4
-            radius: 2
-            color: bar.fillColor
-        }
-        Rectangle {
-            width: 10; height: 10; radius: 5
+
+        handle: Rectangle {
+            x: bar.leftPadding + bar.visualPosition * (bar.availableWidth - width)
+            y: (bar.height - height) / 2
+            width: 12
+            height: 12
+            radius: 6
             color: theme.text
-            anchors.verticalCenter: parent.verticalCenter
-            x: Math.max(0, Math.min(1, bar.value)) * (parent.width - width)
-        }
-        MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: function (mouse) {
-                bar.seeked(Math.max(0, Math.min(1, mouse.x / width)))
-            }
-            onPositionChanged: function (mouse) {
-                if (pressed)
-                    bar.seeked(Math.max(0, Math.min(1, mouse.x / width)))
-            }
+            border.width: bar.pressed ? 2 : 1
+            border.color: bar.fillColor
         }
     }
 
@@ -846,12 +844,54 @@ ApplicationWindow {
                 anchors.margins: 10
                 spacing: 6
 
-                SeekBar {
+                Slider {
+                    id: seekSlider
                     width: parent.width
-                    value: player.duration > 0 ? player.position / player.duration : 0
-                    onSeeked: function (ratio) {
+                    height: 20
+                    from: 0
+                    to: 1
+                    stepSize: 0
+                    value: 0
+                    // Keep the thumb in sync with playback unless the user is
+                    // currently dragging it.
+                    Binding {
+                        target: seekSlider
+                        property: "value"
+                        value: player.duration > 0 ? player.position / player.duration : 0
+                        when: !seekSlider.pressed
+                    }
+                    onMoved: {
                         if (player.duration > 0)
-                            player.position = ratio * player.duration
+                            player.position = value * player.duration
+                    }
+
+                    background: Rectangle {
+                        x: 0
+                        y: (parent.height - 4) / 2
+                        width: parent.width
+                        height: 4
+                        radius: 2
+                        color: Qt.rgba(theme.border.r, theme.border.g, theme.border.b, 0.15)
+
+                        Rectangle {
+                            width: Math.max(0, Math.min(1, seekSlider.visualPosition)) * parent.width
+                            height: parent.height
+                            radius: 2
+                            color: theme.accent2
+                        }
+                    }
+
+                    handle: Rectangle {
+                        x: seekSlider.leftPadding
+                           + seekSlider.visualPosition
+                             * (seekSlider.availableWidth - width)
+                        y: (seekSlider.height - height) / 2
+                        width: 14
+                        height: 14
+                        radius: 7
+                        color: theme.text
+                        border.width: seekSlider.pressed ? 2 : 1
+                        border.color: theme.accent2
                     }
                 }
 

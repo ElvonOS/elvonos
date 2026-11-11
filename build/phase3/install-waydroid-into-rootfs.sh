@@ -24,6 +24,7 @@ sudo chroot "$ROOTFS" apt-get install -y --no-install-recommends \
     python3 python3-gi gir1.2-gtk-3.0 python3-dbus \
     lxc lxcfs iptables nftables polkitd \
     grim \
+    erofs-utils android-sdk-libsparse-utils attr zip unzip jq rsync e2fsprogs \
     fonts-noto fonts-noto-color-emoji
 
 # 3. Install custom packages inside chroot

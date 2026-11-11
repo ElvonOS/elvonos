@@ -49,7 +49,7 @@ maintainers; small reusable pieces can be dual-licensed on request.
 | wlroots / Wayland | Compositor libraries | MIT |
 | Win8DE 0.9.0beta2 (incl. Win8Start, Win8Wall, Win8Running, Win8Corner, Win8Settings, Win8OSD, Win8Lock) | Windows-8-style shell | **GPL-2.0** (unchanged upstream license; ElvonOS modifications stay GPL-2.0) |
 | Waydroid 1.6.3 | Android container runtime | GPL-3.0-or-later |
-| Android 13 images (Waydroid system/vendor) | Android userspace | Apache-2.0 (AOSP) and component licenses; kernel GPL-2.0 |
+| Android 16 images (Waydroid system/vendor, WayDroid-ATV build 20260717) | Android userspace | Apache-2.0 (AOSP), LineageOS and component licenses; kernel GPL-2.0 |
 | PipeWire / WirePlumber | Audio and session management | MIT |
 | NetworkManager | Networking | GPL-2.0-or-later (parts LGPL-2.1-or-later) |
 | udisks2 | Disk management | GPL-2.0-or-later |

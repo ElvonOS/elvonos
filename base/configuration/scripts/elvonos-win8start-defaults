@@ -28,6 +28,7 @@ CLOCK_ICONS = [
 DISPLAY_NAMES = {
     "foot": "Foot",
     "thunar": "Files",
+    "elvonos-explorer": "Files",
     "waydroid": "Waydroid",
     "android": "Android",
     "elvonos-terminal": "Terminal",
@@ -35,14 +36,26 @@ DISPLAY_NAMES = {
     "thunar-bulk-rename": "Bulk Rename",
     "footclient": "Foot CLI",
     "foot-server": "Foot Srv",
-    "thunar-settings": "Prefs",
+    "thunar-settings": "Settings",
+    "elvonos-settings": "Settings",
 }
+
+# Stable ElvonOS artwork for the Metro tiles (also used by the desktop icons).
+ICON_OVERRIDES = {
+    "elvonos-explorer": "/usr/share/icons/elvonos/metro/files.svg",
+    "elvonos-settings": "/usr/share/icons/elvonos/metro/settings.svg",
+    "elvonos-terminal": "/usr/share/icons/elvonos/metro/terminal.svg",
+    "android": "/usr/share/icons/elvonos/metro/android.svg",
+    "thunar-bulk-rename": "/usr/share/icons/elvonos/metro/rename.svg",
+}
+
+LAYOUT_VERSION = 3
 
 # Extra ElvonOS tiles: launch an Android app and return to the Linux desktop.
 CUSTOM_TILES = [
     {
         "name": "Store",
-        "icon": "/usr/share/icons/Papirus/64x64/apps/cs-software-properties.svg",
+        "icon": "/usr/share/icons/elvonos/metro/store.svg",
         "command": "elvonos-store",
         "size": "medium",
         "color": "#2b5b8a",
@@ -214,10 +227,78 @@ def tile(name, icon, desktop_file, command, terminal, x, y, size, color,
     }
 
 
+def migrate_layout():
+    """Update icons/commands of an existing layout without moving tiles."""
+    marker = os.path.join(os.path.dirname(JSON_PATH), ".elvonos-layout-version")
+    try:
+        with open(marker, encoding="utf-8") as handle:
+            if int(handle.read().strip() or "0") >= LAYOUT_VERSION:
+                log("layout already at version %d" % LAYOUT_VERSION)
+                return 0
+    except (OSError, ValueError):
+        pass
+
+    try:
+        with open(JSON_PATH, encoding="utf-8") as handle:
+            tiles = json.load(handle)
+    except (OSError, ValueError) as exc:
+        log("could not read existing layout: %s" % exc)
+        return 1
+    if not isinstance(tiles, list):
+        return 1
+
+    changed = False
+    for item in tiles:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name", "")
+        command = item.get("command", "")
+        replacement = None
+
+        if command == "thunar":
+            replacement = ("elvonos-explorer", "Files",
+                           ICON_OVERRIDES["elvonos-explorer"])
+        elif command == "thunar-settings" or name == "Prefs":
+            replacement = ("elvonos-settings", "Settings",
+                           ICON_OVERRIDES["elvonos-settings"])
+        elif name in ("Files", "Bulk Rename"):
+            replacement = (command, name, ICON_OVERRIDES["thunar-bulk-rename"]
+                           if name == "Bulk Rename"
+                           else ICON_OVERRIDES["elvonos-explorer"])
+        elif name in ("Settings", "Prefs"):
+            replacement = ("elvonos-settings", "Settings",
+                           ICON_OVERRIDES["elvonos-settings"])
+        elif name == "Terminal":
+            replacement = (command, name, ICON_OVERRIDES["elvonos-terminal"])
+        elif name in ("Android", "Android Shell"):
+            replacement = (command, name, ICON_OVERRIDES["android"])
+        elif name == "Store":
+            replacement = (command, name, "/usr/share/icons/elvonos/metro/store.svg")
+
+        if replacement:
+            new_command, new_name, new_icon = replacement
+            if (item.get("command") != new_command
+                    or item.get("name") != new_name
+                    or item.get("icon") != new_icon):
+                item["command"] = new_command
+                item["name"] = new_name
+                item["icon"] = new_icon
+                changed = True
+
+    if changed:
+        with open(JSON_PATH, "w", encoding="utf-8") as handle:
+            json.dump(tiles, handle, indent=2)
+            handle.write("\n")
+        log("migrated existing tile layout to version %d" % LAYOUT_VERSION)
+
+    with open(marker, "w", encoding="utf-8") as handle:
+        handle.write("%d\n" % LAYOUT_VERSION)
+    return 0
+
+
 def main():
     if os.path.exists(JSON_PATH):
-        log("layout already exists, leaving it untouched: " + JSON_PATH)
-        return 0
+        return migrate_layout()
 
     width, height = current_mode()
     half = grid_step(height)
@@ -240,13 +321,13 @@ def main():
 
     # Slots in half-grid units: key, x, y, size, color.
     layout = [
-        ("thunar", 4, 2, "medium", "#00a4ef"),
+        ("elvonos-explorer", 4, 2, "medium", "#00a4ef"),
         ("android", 6, 0, "medium", "#3ddc84"),
         ("org.pulseaudio.pavucontrol", 6, 2, "medium", "#da532c"),
         ("elvonos-terminal", 8, 0, "medium", "#2b5797"),
         ("thunar-bulk-rename", 8, 2, "medium", "#603cba"),
         ("elvonos-terminal", 4, 4, "medium", "#2b5797"),
-        ("thunar-settings", 8, 4, "medium", "#00a4ef"),
+        ("elvonos-settings", 8, 4, "medium", "#00a4ef"),
     ]
 
     for key, gx, gy, size, color in layout:
@@ -255,9 +336,10 @@ def main():
             log("desktop entry not found, skipping: " + key)
             continue
         entry, path = item
+        icon = ICON_OVERRIDES.get(key, resolve_icon(entry.get("Icon", "")))
         tiles.append(tile(
             DISPLAY_NAMES.get(key, entry.get("Name", key)),
-            resolve_icon(entry.get("Icon", "")),
+            icon,
             path,
             entry.get("Exec", ""),
             entry.get("Terminal", False),
@@ -291,6 +373,9 @@ def main():
         json.dump(tiles, handle, indent=2)
         handle.write("\n")
     os.chmod(JSON_PATH, 0o644)
+    marker = os.path.join(os.path.dirname(JSON_PATH), ".elvonos-layout-version")
+    with open(marker, "w", encoding="utf-8") as handle:
+        handle.write("%d\n" % LAYOUT_VERSION)
     log("wrote %d tiles to %s" % (len(tiles), JSON_PATH))
     return 0
 

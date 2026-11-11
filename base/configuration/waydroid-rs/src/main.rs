@@ -506,7 +506,8 @@ fn notify(summary: &str, body: &str, urgency: &str) {
         return;
     }
     let _ = Command::new("notify-send")
-        .args(["-a", "Waydroid", "-i", "waydroid", "-u", urgency, summary, body])
+        .args(["-a", "Waydroid", "-i", "waydroid", "-u", urgency,
+               "-r", "1977", "-t", "5000", summary, body])
         .status();
     if which("elvonos-sound").is_some() {
         let sound = if urgency == "critical" {

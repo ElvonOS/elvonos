@@ -28,7 +28,7 @@ desktop shell, applications, kernel build, installer and update system.
 | labwc | labwc/labwc (Debian) | 0.8.3-1 | GPL-2.0-or-later | **Not forked**; configuration only |
 | Win8DE shell | `github.com/er-bharat/Win8DE` | `cc5594526cf6fd2e5957f44afaf4268e425acd45` (0.9.0-beta2) | GPL-2.0 | **Forked with 18 patches** (see §3) |
 | Waydroid | `waydroid/waydroid` | 1.6.3 | GPL-3.0-or-later | Vendored source + service/property patches + Rust wrapper |
-| Android image | LineageOS 20 / Android 13 VANILLA (x86_64) | 2026-09-27 | Apache-2.0 and component licenses | Bundled unmodified as `system.img`/`vendor.img` |
+| Android image | LineageOS 23.2 / Android 16 VANILLA (x86_64), WayDroid-ATV build 20260717 | 2026-07-17 | Apache-2.0, LineageOS and component licenses | Bundled unmodified as `system.img`/`vendor.img`; `elvonos-waydroid-image` manages and repacks custom images |
 | Qt | Qt 6 (Debian) | 6.8.2 | LGPL-3.0 / GPL-3.0 | Toolkit for ElvonOS apps |
 | PipeWire / WirePlumber | upstream (Debian) | Debian 13 | MIT | Noise-suppression and buffer configuration |
 | libinput / wlroots | upstream (Debian) | Debian 13 | MIT | Unchanged |
@@ -85,8 +85,10 @@ Additional ElvonOS-side shell changes (not in the Win8DE source):
 - `base/configuration/waydroid-rs/`: **`elvonos-waydroid`**, a Rust client with
   `open FILE`, `share TEXT`, `freeze`/`unfreeze`, `backup`/`restore`,
   `multiwindow on|off`, a singleton bridge and lock-screen hook.
-- Android 13 images (LineageOS 20 VANILLA) are bundled unmodified; the ISO
-  ships `system.img`, `vendor.img` and their `SHA256SUMS`.
+- Android 16 images (LineageOS 23.2 QPR2 VANILLA + MAINLINE vendor) are
+  bundled unmodified; the ISO ships `system.img`, `vendor.img`,
+  `SHA256SUMS` and `elvonos-image.json`. `elvonos-waydroid-image` can
+  download verified releases and build custom images (EROFS/ext4).
 
 ## 5. ElvonOS applications and services
 

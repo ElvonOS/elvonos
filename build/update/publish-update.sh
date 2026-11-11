@@ -45,6 +45,16 @@ cp "$REPO_ROOT/base/configuration/scripts/elvonos-flatpak-setup" \
 minisign -Sm "$WORK/flatpak-store-1.sh" -s "$KEY" -t "ElvonOS Flathub setup"
 FLATPAK_SHA=$(sha256sum "$WORK/flatpak-store-1.sh" | cut -d' ' -f1)
 
+cp "$REPO_ROOT/base/configuration/scripts/elvonos-waydroid-deps" \
+   "$WORK/waydroid-image-1.sh"
+minisign -Sm "$WORK/waydroid-image-1.sh" -s "$KEY" -t "ElvonOS Waydroid image tooling"
+WAYDROID_SHA=$(sha256sum "$WORK/waydroid-image-1.sh" | cut -d' ' -f1)
+
+cp "$REPO_ROOT/base/configuration/scripts/elvonos-desktop-policy" \
+   "$WORK/desktop-policy-1.sh"
+minisign -Sm "$WORK/desktop-policy-1.sh" -s "$KEY" -t "ElvonOS desktop policy fixes"
+POLICY_SHA=$(sha256sum "$WORK/desktop-policy-1.sh" | cut -d' ' -f1)
+
 cat > "$WORK/README.txt" <<EOF
 ElvonOS $VERSION (live ISO)
 
@@ -62,6 +72,8 @@ Files:
 Update components (signed):
   components/elvonos-apps-$APPS_VERSION.tar.zst
   components/flatpak-store-1.sh
+  components/waydroid-image-1.sh
+  components/desktop-policy-1.sh
 
 Verify:
   sha256sum -c SHA256SUMS
@@ -81,6 +93,8 @@ rsync -avP --timeout=120 \
 rsync -avP --timeout=120 \
     "$PAYLOAD" "$PAYLOAD.minisig" \
     "$WORK/flatpak-store-1.sh" "$WORK/flatpak-store-1.sh.minisig" \
+    "$WORK/waydroid-image-1.sh" "$WORK/waydroid-image-1.sh.minisig" \
+    "$WORK/desktop-policy-1.sh" "$WORK/desktop-policy-1.sh.minisig" \
     "$SF_USER@$SF_HOST:$SF_COMPONENTS/"
 
 echo "==> Uploading ISO (resumable)"
@@ -91,13 +105,13 @@ echo "==> Writing feed"
 git -C "$FEED_REPO" pull --rebase origin main 2>/dev/null || true
 python3 - "$FEED_REPO/feeds/stable.json" "$VERSION" "$APPS_VERSION" "$SIZE" "$SHA256" \
     "$BASE_URL/releases/$VERSION/$(basename "$ISO")" \
-    "$PAYLOAD_SHA" "$FLATPAK_SHA" <<'PY'
+    "$PAYLOAD_SHA" "$FLATPAK_SHA" "$WAYDROID_SHA" "$POLICY_SHA" <<'PY'
 import datetime
 import json
 import os
 import sys
 
-path, version, apps_version, size, sha, iso_url, payload_sha, flatpak_sha = sys.argv[1:9]
+path, version, apps_version, size, sha, iso_url, payload_sha, flatpak_sha, waydroid_sha, policy_sha = sys.argv[1:11]
 base = "https://downloads.sourceforge.net/project/elvonos/components"
 data = {}
 if os.path.exists(path):
@@ -133,6 +147,20 @@ components["flatpak-store"] = {
     "url": f"{base}/flatpak-store-1.sh",
     "sha256": flatpak_sha,
     "signature": f"{base}/flatpak-store-1.sh.minisig",
+}
+components["waydroid-image"] = {
+    "version": "1",
+    "type": "script",
+    "url": f"{base}/waydroid-image-1.sh",
+    "sha256": waydroid_sha,
+    "signature": f"{base}/waydroid-image-1.sh.minisig",
+}
+components["desktop-policy"] = {
+    "version": "1",
+    "type": "script",
+    "url": f"{base}/desktop-policy-1.sh",
+    "sha256": policy_sha,
+    "signature": f"{base}/desktop-policy-1.sh.minisig",
 }
 with open(path, "w") as handle:
     handle.write(json.dumps(data, indent=2) + "\n")

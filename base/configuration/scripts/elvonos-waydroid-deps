@@ -1,0 +1,33 @@
+#!/bin/bash
+# ElvonOS update component: dependencies for elvonos-waydroid-image.
+# Installs the image tooling on existing systems. Idempotent and safe to re-run.
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+packages=(
+    erofs-utils
+    android-sdk-libsparse-utils
+    attr
+    zip
+    unzip
+    jq
+    rsync
+    e2fsprogs
+)
+
+missing=()
+for package in "${packages[@]}"; do
+    if ! dpkg -s "$package" >/dev/null 2>&1; then
+        missing+=("$package")
+    fi
+done
+
+if [ "${#missing[@]}" -eq 0 ]; then
+    echo "Waydroid image tooling is already installed."
+    exit 0
+fi
+
+echo "Installing Waydroid image tooling: ${missing[*]}"
+apt-get update -qq || true
+apt-get install -y --no-install-recommends "${missing[@]}"
+echo "Waydroid image tooling installed."

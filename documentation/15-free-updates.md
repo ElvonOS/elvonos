@@ -161,6 +161,13 @@ it finishes.
       "url": "https://downloads.sourceforge.net/project/elvonos/components/flatpak-store-1.sh",
       "sha256": "…",
       "signature": "…sh.minisig"
+    },
+    "waydroid-image": {
+      "version": "1",
+      "type": "script",
+      "url": "https://downloads.sourceforge.net/project/elvonos/components/waydroid-image-1.sh",
+      "sha256": "…",
+      "signature": "…sh.minisig"
     }
   }
 }
@@ -189,6 +196,23 @@ signed component `flatpak-store` performs the official setup
 
 The Store shows a banner while Flathub is not configured and can run the same
 script via `pkexec elvonos-flatpak-setup`.
+
+## Waydroid image tooling
+
+The signed component `waydroid-image` installs the packages that
+`elvonos-waydroid-image` needs on existing installations (`erofs-utils`,
+`android-sdk-libsparse-utils`, `attr`, `zip`, `unzip`, `jq`, `rsync`,
+`e2fsprogs`). It is idempotent. The Android images themselves are ISO content
+and are not part of the payload (2 GB); after the component is applied, users
+can run:
+
+```sh
+sudo elvonos-waydroid-image install android16
+```
+
+This downloads the verified Android 16 release, keeps Android user data and
+re-runs `waydroid init -f`. See
+[18-waydroid-images.md](18-waydroid-images.md).
 
 ## Publishing a release
 

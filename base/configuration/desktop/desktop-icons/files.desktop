@@ -1,7 +1,7 @@
 [Desktop Entry]
-Name=Dateien
+Name=Files
 Comment=File manager
-Exec=thunar
+Exec=elvonos-explorer
 Icon=system-file-manager
 Type=Application
 Categories=System;FileManager;

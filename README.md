@@ -50,7 +50,7 @@ All screenshots are also hosted on SourceForge:
 | Init | systemd 257 |
 | Compositor | **labwc 0.8.3** (Debian, configuration only) |
 | Desktop shell | **Win8DE 0.9.0-beta2** fork, upstream commit `cc5594526cf6fd2e5957f44afaf4268e425acd45` |
-| Android runtime | **Waydroid 1.6.3** + Android 13 / LineageOS 20 VANILLA images |
+| Android runtime | **Waydroid 1.6.3** + Android 16 / LineageOS 23.2 QPR2 (SDK 36) |
 | Toolkits | Qt 6.8, GTK 3 |
 | Bootloader | GRUB 2.12 (UEFI + BIOS) |
 | Installer | ElvonOS `elvonos-installer` (Bash + Zenity) |
@@ -116,6 +116,9 @@ documented here first.
 - Win8DE Start screen, taskbar, hot corners, live tiles, restart/shutdown.
 - Metro mode (maximized windows) switchable in Settings.
 - Waydroid multi-window integration and Android app icons in the Start menu.
+- **Android 16** (LineageOS 23.2 QPR2) with `elvonos-waydroid-image`:
+  verified downloads, install from ISO/local zips, custom EROFS/ext4 image
+  creation with overlays and APKs, and image status.
 - Built-in terminal with Android shell support.
 - Health layer (`elvonos-healthd`) and Settings **Condition** card.
 - Free, signed update feed with **SourceForge as primary** origin and
@@ -123,13 +126,13 @@ documented here first.
 
 ## Install
 
-1. Download `ElvonOS-1.0.7-amd64.iso` from
-   <https://sourceforge.net/projects/elvonos/files/releases/1.0.7/>.
+1. Download `ElvonOS-1.0.9-amd64.iso` from
+   <https://sourceforge.net/projects/elvonos/files/releases/1.0.9/>.
 2. Verify:
 
    ```sh
    sha256sum -c SHA256SUMS
-   minisign -Vm ElvonOS-1.0.7-amd64.iso -p elvonos.pub
+   minisign -Vm ElvonOS-1.0.9-amd64.iso -p elvonos.pub
    ```
 
 3. Write the ISO to a USB stick (`dd` or balenaEtcher) and boot it.
@@ -138,9 +141,11 @@ documented here first.
 5. Reboot and log in with your account.
 
 All drivers and firmware are included. Optional software is installed on the
-first boot when online. The 1.0.7 ISO ships the current software line
-(`elvonos-apps 1.0.7-7`), including the signed updater and automatic updates.
-Details: [Live installer](documentation/13-live-installer.md).
+first boot when online. The 1.0.9 ISO ships the current software line
+(`elvonos-apps 1.0.9-1`), including the signed updater, automatic updates and
+the Waydroid image manager with Android 16.
+Details: [Live installer](documentation/13-live-installer.md),
+[Waydroid images](documentation/18-waydroid-images.md).
 
 ## Updates
 
@@ -155,7 +160,8 @@ runs setup components (for example Flathub for the Store). Updates are staged
 in the background and installed on shutdown/reboot. A new ISO is needed only
 for kernel, bootloader or live-image changes. The public key is at
 `/usr/share/elvonos/update/elvonos.pub`. Current component versions:
-`elvonos-apps 1.0.7-7`, `flatpak-store 1`, `zz-auto-updates 2`. Details:
+`elvonos-apps 1.0.9-1`, `flatpak-store 1`, `waydroid-image 1`,
+`desktop-policy 1`, `zz-auto-updates 2`. Details:
 [Free updates](documentation/15-free-updates.md).
 
 ## Repository layout
@@ -189,9 +195,9 @@ Build host: Debian 13 (or WSL2 with Debian 13).
 sudo bash build/phase1/build-rootfs.sh     # Debian rootfs
 sudo bash build/kernel/build-kernel.sh     # 6.12.116-elvonos
 sudo bash build/win8de/build-win8de.sh --install-rootfs
-ELVONOS_VERSION=1.0.7 ELVONOS_APPS_VERSION=1.0.7-7 \
+ELVONOS_VERSION=1.0.9 ELVONOS_APPS_VERSION=1.0.9-1 \
   sudo -E bash build/phase7/build-iso.sh
-# → build/out/ElvonOS-1.0.7-amd64.iso
+# → build/out/ElvonOS-1.0.9-amd64.iso
 ```
 
 ## Documentation
@@ -202,6 +208,8 @@ English documents:
 - [Live installer](documentation/13-live-installer.md)
 - [Licensing](documentation/14-licensing.md)
 - [Free updates](documentation/15-free-updates.md)
+- [Waydroid images and image manager](documentation/18-waydroid-images.md)
+- [UI and integration fixes 1.0.9](documentation/19-ui-fixes-1.0.9.md)
 - [Release plan](documentation/17-release-plan.md)
 - [Documentation index](documentation/README.md)
 

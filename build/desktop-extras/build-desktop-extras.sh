@@ -8,6 +8,8 @@ ROOTFS="$REPO_ROOT/build/out/rootfs"
 SOURCE_DIR="$REPO_ROOT/base/configuration/desktop-extras"
 BUILD_DIR="/tmp/elvonos-desktop-extras"
 
+ROOTFS="$ROOTFS" bash "$REPO_ROOT/build/search/build-search.sh"
+
 cmake -S "$SOURCE_DIR" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build "$BUILD_DIR"
 

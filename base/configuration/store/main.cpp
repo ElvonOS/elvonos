@@ -599,7 +599,15 @@ public:
 
     Q_INVOKABLE void openAurora()
     {
-        QProcess::startDetached("elvonos-waydroid", {"com.aurora.store"});
+        // Android 16 on Waydroid 1.6.3 can create the Android task without a
+        // Wayland window.  If no Aurora window appears, fall back to the
+        // fullscreen Waydroid UI so the app is still usable.
+        QProcess::startDetached(QStringLiteral("sh"), {
+            QStringLiteral("-c"),
+            QStringLiteral("elvonos-waydroid com.aurora.store; sleep 2; "
+                           "grep -qi aurora \"$HOME/.config/list-windows/windows.ini\" "
+                           "2>/dev/null || waydroid show-full-ui")
+        });
     }
 
 signals:

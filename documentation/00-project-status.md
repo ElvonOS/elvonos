@@ -591,6 +591,28 @@ The default Start layout was also adjusted: Aurora takes the former Foot slot, D
   final `check` returned `"update": false`, `"os_updates": 0`,
   `"components": []`. Feed primary: SourceForge; fallbacks: GitHub and
   Codeberg. APT failures do not abort component updates.
+- **Android 16 integration (2026-11-11)**: Waydroid now ships Android 16
+  (LineageOS 23.2 QPR2, SDK 36, security patch 2026-07-01) instead of
+  Android 13. Stock images were boot-tested with Waydroid 1.6.3 in QEMU
+  (`ro.build.version.release=16`, SurfaceFlinger running). New
+  `elvonos-waydroid-image` supports `status`, `list`, verified `download`,
+  `install` (release zip, live medium, local images) and `create`/`repack`
+  of custom EROFS/ext4 images with overlays and APKs. A custom EROFS repack
+  was boot-tested (overlay file, `elvonos-image.prop` and APK present,
+  SELinux labels preserved). The installer copies the image pair to
+  `/etc/waydroid-extra/images`; first boot runs `waydroid init -f`. Details:
+  `documentation/18-waydroid-images.md`.
+- **UI and integration fixes (1.0.9)**: Start no longer opens at login and
+  the taskbar stays mapped; `Super` opens Start. Store toolbar is responsive
+  (Android tab visible), desktop lists normal files with MIME icons, rename/
+  copy preserve extensions, group folders have search, System opens a
+  searchable Wofi menu, Media seek/volume sliders are real draggable Sliders,
+  Metro/taskbar/Start icons resolve Papirus/Breeze/Adwaita, live installer
+  icon added and removed on install. Waydroid: installed user UID/GID 1000,
+  live Android data excluded, passwordless sudo, `loop` module at boot,
+  LSM boot parameters and a single replaceable notification. Desktop search
+  now uses the Rust `elvonos-search-index` (built once, filtered in memory).
+  Details: `documentation/19-ui-fixes-1.0.9.md`.
 - **Software update 1.0.4-2**: Settings → Updates now shows the last check
   time, OS/component counts, a live log and the ISO hint; `elvonos-update log`
   reads user/root logs. Delivered as a signed payload on top of 1.0.3.

@@ -105,6 +105,21 @@ echo "==> Applying ElvonOS configuration templates..."
 $SUDO mkdir -p "$OUT_DIR/etc/modprobe.d" "$OUT_DIR/etc/modules-load.d"
 $SUDO cp -f "$REPO_ROOT/base/configuration/modprobe.d/elvonos-binder.conf" "$OUT_DIR/etc/modprobe.d/"
 $SUDO cp -f "$REPO_ROOT/base/configuration/modules-load.d/elvonos-binder.conf" "$OUT_DIR/etc/modules-load.d/"
+# Waydroid/Flatpak use loop-mounted images; the installed system must create
+# /dev/loop-control and /dev/loop* even though squashfs/live-boot already
+# loaded the module on the live medium.
+$SUDO cp -f "$REPO_ROOT/base/configuration/modules-load.d/elvonos-loop.conf" "$OUT_DIR/etc/modules-load.d/"
+
+# 1b. Boot parameters shared by the live ISO and installed systems.
+#     Waydroid's Android images expect the same LSM setup as the live boot.
+if [ -f "$OUT_DIR/etc/default/grub" ]; then
+    $SUDO sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet security=selinux apparmor=0"/' \
+        "$OUT_DIR/etc/default/grub"
+else
+    $SUDO mkdir -p "$OUT_DIR/etc/default"
+    printf 'GRUB_CMDLINE_LINUX_DEFAULT="quiet security=selinux apparmor=0"\n' | \
+        $SUDO tee "$OUT_DIR/etc/default/grub" >/dev/null
+fi
 
 # 2. APT configuration
 $SUDO mkdir -p "$OUT_DIR/etc/apt/sources.list.d" "$OUT_DIR/etc/apt/preferences.d"
