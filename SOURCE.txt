@@ -1,0 +1,28 @@
+ElvonOS source code
+===================
+
+Version: 1.0.7 (source tree for the 1.0.3/1.0.7 release line)
+License: GPL-3.0-or-later for original ElvonOS code; bundled components keep
+         their own licenses (see LICENSES.md).
+
+Repositories
+------------
+GitHub:   https://github.com/ElvonOS/elvonos
+Codeberg: https://codeberg.org/ElvonOS/elvonos
+
+Build
+-----
+- documentation/16-upstream-forks-and-changes.md  (base, forks, changes)
+- documentation/13-live-installer.md              (installer)
+- documentation/15-free-updates.md                (updater, feed, auto updates)
+- build/phase1/build-rootfs.sh                    (Debian rootfs)
+- build/kernel/build-kernel.sh                    (6.12.116-elvonos)
+- build/win8de/build-win8de.sh                    (Win8DE fork + patches)
+- build/phase7/build-iso.sh                       (ISO)
+
+Third-party source
+------------------
+Upstream projects and pinned revisions are listed in
+documentation/16-upstream-forks-and-changes.md. Debian source packages are
+available from the Debian archive; Win8DE, Waydroid, GRUB and Qt sources are
+available from their upstream repositories.
