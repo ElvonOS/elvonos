@@ -49,8 +49,8 @@ log() {
 }
 die() { log "ERROR: $*"; exit 1; }
 
-# Keep two concurrent runs from stepping on each other.
-LOCK="${TMPDIR:-/tmp}/elvonos-update.lock"
+# Keep two concurrent runs from stepping on each other (per user).
+LOCK="${TMPDIR:-/tmp}/elvonos-update-$(id -u).lock"
 exec 9>"$LOCK"
 flock -n 9 || die "another update is already running"
 

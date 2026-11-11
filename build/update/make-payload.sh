@@ -29,10 +29,7 @@ done
 for f in usr/share/applications/elvonos*.desktop \
          usr/share/wayland-sessions/elvonos.desktop \
          etc/systemd/system/elvonos-*.service \
-         etc/systemd/system/elvonos-*.timer \
-         etc/systemd/system/timers.target.wants/elvonos-update-check.timer \
-         etc/systemd/system/multi-user.target.wants/elvonos-update-boot.service \
-         etc/systemd/system/shutdown.target.wants/elvonos-update-shutdown.service; do
+         etc/systemd/system/elvonos-*.timer; do
     if [ -e "$f" ] || [ -L "$f" ]; then paths+=("$f"); fi
 done
 while IFS= read -r f; do paths+=("$f"); done < <(
